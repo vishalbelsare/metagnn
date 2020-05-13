@@ -70,14 +70,14 @@ fileHandler.setFormatter(formatter)
 logger.addHandler(fileHandler)
 
 logger.info("Welcome to MetaGNN: Metagenomic Contigs classification using GNN.")
-logger.info("This version of GraphBin makes use of the assembly graph produced by SPAdes which is based on the de Bruijn graph approach.")
+logger.info("This version of MetaGNN makes use of the assembly graph produced by SPAdes which is based on the de Bruijn graph approach.")
 
 logger.info("Input arguments:")
 logger.info("Assembly graph file: "+assembly_graph_file)
 logger.info("Contig paths file: "+contig_paths)
 logger.info("Contig fasta file: "+contig_fasta)
 logger.info("Kraken2 output file: "+taxon_file)
-logger.info("Final binning output file: "+output_path)
+logger.info("Final classification output file: "+output_path)
 # logger.info("Maximum number of iterations: "+str(max_iteration))
 # logger.info("Difference threshold: "+str(diff_threshold))
 
