@@ -63,7 +63,7 @@ class Metagenomic(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        return ['assembly_graph_with_scaffolds.gfa', 'contigs.paths', 'kraken2.out']
+        return ['assembly_graph_with_scaffolds.gfa', 'contigs.paths', 'kraken2.out', 'taxa.encoding']
 
     @property
     def processed_file_names(self):
@@ -76,6 +76,7 @@ class Metagenomic(InMemoryDataset):
         assembly_graph_file = osp.join(self.raw_dir, self.raw_file_names[0])
         contig_paths = osp.join(self.raw_dir, self.raw_file_names[1])
         taxa_file = osp.join(self.raw_dir, self.raw_file_names[2])
+        taxa_encoding = osp.join(self.raw_dir, self.raw_file_names[3])
         # Read assembly graph and node features from the file into arrays
         paths = {}
         segment_contigs = {}
@@ -201,13 +202,26 @@ class Metagenomic(InMemoryDataset):
         assembly_graph.simplify(multiple=True, loops=False, combine_edges=None)
         clusters = assembly_graph.clusters()
 
+## Construct taxa encoding 
+#-------------------------------
+
+        taxon_vector_map = defaultdict(set)
+        with open(taxa_encoding) as file:
+            line = file.readline()
+            while line != "":
+                strings = line.split("\t")
+                taxon_id = int(strings[0])
+                hashes = strings[1].split(" ")[:-1]
+                taxon_vector_map[taxon_id] = list(map(int, hashes))
+                line = file.readline()
+
+
 ## Construct the feature vector from kraken2 output 
 #-------------------------------
 
         data_list = []
         node_features = []
         node_taxon = []
-        node_vector_map = defaultdict(set)
 
         max_len = 0
         # Get tax labels from kraken2 output 
@@ -219,30 +233,36 @@ class Metagenomic(InMemoryDataset):
                     strings = line.split("\t")
                     node_id = strings[1].split("_")[1]
                     taxon_id = int(strings[2])
-                    taxa = strings[4].split(" ")
-                    feature_list = []
-                    for taxon in taxa:
-                        if ":" in taxon:
-                            txid = int(taxon.split(":")[0])
-                            feature_list.append(txid)
+                    # taxa = strings[4].split(" ")
+                    # feature_list = []
+                    # for taxon in taxa:
+                        # if ":" in taxon:
+                            # txid = int(taxon.split(":")[0])
+                            # feature_list.append(txid)
+                # print(taxon_id)
+                if taxon_id in taxon_vector_map:
+                    node_features.append(taxon_vector_map[taxon_id]) 
+                else: 
+                    print(taxon_id)
                 node_taxon.append(taxon_id)
-                if max_len < len(feature_list):
-                    max_len = len(feature_list)
-                node_features.append(feature_list)
+                # if max_len < len(feature_list):
+                    # max_len = len(feature_list)
+                # node_features.append(feature_list)
                 line = file.readline()
 
-        feature_vector = []
-        for node_list in node_features:
-            if len(node_list) < max_len:
-                resize(node_list, max_len, 0)
-            feature_vector.append(node_list)
+        # print(node_features)
+        # feature_vector = []
+        # for node_list in node_features:
+            # if len(node_list) < max_len:
+                # resize(node_list, max_len, 0)
+            # feature_vector.append(node_list)
 
-        x = torch.tensor(feature_vector, dtype=torch.float)
-        y = torch.tensor(node_taxon, dtype=torch.float)
+        x = torch.tensor(node_features, dtype=torch.long)
+        y = torch.tensor(node_taxon, dtype=torch.long)
         edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
-        
+       
         train_size = int(node_count/3)
-        val_size = 1000
+        val_size = train_size
         train_index = torch.arange(train_size, dtype=torch.long)
         train_mask = index_to_mask(train_index, size=node_count)
         val_index = torch.arange(train_size, train_size+val_size, dtype=torch.long)
@@ -283,7 +303,7 @@ class Net(torch.nn.Module):
 def train():
     model.train()
     optimizer.zero_grad()
-    F.nll_loss(model()[data.train_mask], data.y[data.train_mask]).backward()
+    F.nll_loss(model()[data.train_mask], data.y[data.train_mask].long()).backward()
     optimizer.step()
 
 
@@ -351,6 +371,7 @@ logger.info("Constructing the assembly graph and node feature vectors")
 dataset = Metagenomic(root=input_dir, name=data_name)
 data = dataset[0]
 print(data)
+print(data.train_mask)
 # print(dataset[0].x)
 # print(dataset[0].edge_index)
 
@@ -362,6 +383,7 @@ logger.info("Training model")
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model, data = Net().to(device), data.to(device)
+
 optimizer = torch.optim.Adam([
     dict(params=model.reg_params, weight_decay=5e-4),
     dict(params=model.non_reg_params, weight_decay=0)
