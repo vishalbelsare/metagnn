@@ -201,6 +201,7 @@ class Metagenomic(InMemoryDataset):
         assembly_graph.add_edges(edge_list)
         assembly_graph.simplify(multiple=True, loops=False, combine_edges=None)
         clusters = assembly_graph.clusters()
+        print("Clusters: " + str(len(clusters)))
 
 ## Construct taxa encoding 
 #-------------------------------
