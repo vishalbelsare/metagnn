@@ -372,9 +372,9 @@ logger.info("Constructing the assembly graph and node feature vectors")
 dataset = Metagenomic(root=input_dir, name=data_name)
 data = dataset[0]
 print(data)
-print("X: " + data.x.type())
-print("Edge Index: " + data.edge_index.type())
-print("Y: " + data.y.type())
+# print("X: " + data.x.type())
+# print("Edge Index: " + data.edge_index.type())
+# print("Y: " + data.y.type())
 
 logger.info("Graph construction done!")
 elapsed_time = time.time() - start_time
