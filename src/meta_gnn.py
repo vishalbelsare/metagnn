@@ -258,17 +258,17 @@ class Metagenomic(InMemoryDataset):
                 # resize(node_list, max_len, 0)
             # feature_vector.append(node_list)
 
-        x = torch.tensor(node_features, dtype=torch.long)
-        y = torch.tensor(node_taxon, dtype=torch.long)
+        x = torch.tensor(node_features, dtype=torch.float)
+        y = torch.tensor(node_taxon, dtype=torch.float)
         edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
        
         train_size = int(node_count/3)
         val_size = train_size
-        train_index = torch.arange(train_size, dtype=torch.long)
+        train_index = torch.arange(train_size, dtype=torch.BoolTensor)
         train_mask = index_to_mask(train_index, size=node_count)
-        val_index = torch.arange(train_size, train_size+val_size, dtype=torch.long)
+        val_index = torch.arange(train_size, train_size+val_size, dtype=torch.BoolTensor)
         val_mask = index_to_mask(val_index, size=node_count)
-        test_index = torch.arange(train_size+val_size, node_count, dtype=torch.long)
+        test_index = torch.arange(train_size+val_size, node_count, dtype=torch.BoolTensor)
         test_mask = index_to_mask(test_index, size=node_count)
 
         data = Data(x=x, edge_index=edge_index, y=y)
@@ -295,7 +295,7 @@ class Net(torch.nn.Module):
         self.non_reg_params = self.conv2.parameters()
 
     def forward(self):
-        x, edge_index, edge_weight = data.x, data.edge_index, data.edge_attr
+        x, edge_index, edge_weight = data.x.float(), data.edge_index, data.edge_attr
         x = F.relu(self.conv1(x, edge_index, edge_weight))
         x = F.dropout(x, training=self.training)
         x = self.conv2(x, edge_index, edge_weight)
@@ -372,9 +372,9 @@ logger.info("Constructing the assembly graph and node feature vectors")
 dataset = Metagenomic(root=input_dir, name=data_name)
 data = dataset[0]
 print(data)
-print(data.train_mask)
-# print(dataset[0].x)
-# print(dataset[0].edge_index)
+print("X: " + data.x.type())
+print("Edge Index: " + data.edge_index.type())
+print("Y: " + data.y.type())
 
 logger.info("Graph construction done!")
 elapsed_time = time.time() - start_time
