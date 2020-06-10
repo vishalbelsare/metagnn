@@ -207,13 +207,16 @@ class Metagenomic(InMemoryDataset):
 #-------------------------------
 
         taxon_vector_map = defaultdict(set)
+        external_taxon_map = defaultdict(set)
         with open(taxa_encoding) as file:
             line = file.readline()
             while line != "":
                 strings = line.split("\t")
                 taxon_id = int(strings[0])
-                hashes = strings[1].split(" ")[:-1]
-                taxon_vector_map[taxon_id] = list(map(int, hashes))
+                external_id = int(strings[1])
+                external_taxon_map[external_id] = taxon_id
+                hashes = strings[2].split(" ")[:-1]
+                taxon_vector_map[external_id] = list(map(int, hashes))
                 line = file.readline()
 
 
@@ -245,7 +248,7 @@ class Metagenomic(InMemoryDataset):
                     node_features.append(taxon_vector_map[taxon_id]) 
                 else: 
                     print(taxon_id)
-                node_taxon.append(taxon_id)
+                node_taxon.append(external_taxon_map[taxon_id])
                 # if max_len < len(feature_list):
                     # max_len = len(feature_list)
                 # node_features.append(feature_list)
@@ -264,11 +267,11 @@ class Metagenomic(InMemoryDataset):
        
         train_size = int(node_count/3)
         val_size = train_size
-        train_index = torch.arange(train_size, dtype=torch.BoolTensor)
+        train_index = torch.arange(train_size)
         train_mask = index_to_mask(train_index, size=node_count)
-        val_index = torch.arange(train_size, train_size+val_size, dtype=torch.BoolTensor)
+        val_index = torch.arange(train_size, train_size+val_size)
         val_mask = index_to_mask(val_index, size=node_count)
-        test_index = torch.arange(train_size+val_size, node_count, dtype=torch.BoolTensor)
+        test_index = torch.arange(train_size+val_size, node_count)
         test_mask = index_to_mask(test_index, size=node_count)
 
         data = Data(x=x, edge_index=edge_index, y=y)
@@ -340,8 +343,8 @@ start_time = time.time()
 
 ap = argparse.ArgumentParser()
 
-ap.add_argument("--input", required=True, help="path to the assembly graph file")
-ap.add_argument("--name", required=True, help="path to the contigs.paths file")
+ap.add_argument("-i", "--input", required=True, help="path to the assembly graph file")
+ap.add_argument("-n", "--name", required=True, help="path to the contigs.paths file")
 # ap.add_argument("--max_iteration", required=False, type=int, help="maximum number of iterations for label propagation algorithm. [default: 100]")
 # ap.add_argument("--diff_threshold", required=False, type=float, help="difference threshold for label propagation algorithm. [default: 0.1]")
 
@@ -372,6 +375,8 @@ logger.info("Constructing the assembly graph and node feature vectors")
 dataset = Metagenomic(root=input_dir, name=data_name)
 data = dataset[0]
 print(data)
+# print(data.num_features)
+# print(dataset.num_classes)
 # print("X: " + data.x.type())
 # print("Edge Index: " + data.edge_index.type())
 # print("Y: " + data.y.type())
@@ -398,7 +403,7 @@ for epoch in range(1, 20):
         best_val_acc = val_acc
         test_acc = tmp_test_acc
     log = 'Epoch: {:03d}, Train: {:.4f}, Val: {:.4f}, Test: {:.4f}'
-    print(log.format(epoch, train_acc, best_val_acc, test_acc))
+    logger.info(log.format(epoch, train_acc, best_val_acc, test_acc))
 
 """
 dataset = dataset
