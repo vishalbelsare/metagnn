@@ -388,6 +388,7 @@ logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 logger.info("Training model")
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+logger.info("Running GNN on: "+device)
 model, data = Net().to(device), data.to(device)
 
 optimizer = torch.optim.Adam([
