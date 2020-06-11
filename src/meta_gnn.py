@@ -292,8 +292,6 @@ class Net(torch.nn.Module):
         super(Net, self).__init__()
         self.conv1 = GCNConv(dataset.num_features, 16, cached=False)
         self.conv2 = GCNConv(16, int(dataset.num_classes), cached=False)
-        # self.conv1 = ChebConv(data.num_features, 16, K=2)
-        # self.conv2 = ChebConv(16, data.num_features, K=2)
 
         self.reg_params = self.conv1.parameters()
         self.non_reg_params = self.conv2.parameters()
@@ -313,7 +311,6 @@ def train():
         optimizer.zero_grad()
         out = model(data)
         loss = F.nll_loss(out[data.train_mask], data.y[data.train_mask].long(), reduction='none')
-        # loss = (loss * data.node_norm)[data.train_mask].sum()
         loss.mean().backward()
         optimizer.step()
         total_loss += loss.mean().item() * data.num_nodes
@@ -353,8 +350,6 @@ ap = argparse.ArgumentParser()
 
 ap.add_argument("-i", "--input", required=True, help="path to the assembly graph file")
 ap.add_argument("-n", "--name", required=True, help="path to the contigs.paths file")
-# ap.add_argument("--max_iteration", required=False, type=int, help="maximum number of iterations for label propagation algorithm. [default: 100]")
-# ap.add_argument("--diff_threshold", required=False, type=float, help="difference threshold for label propagation algorithm. [default: 0.1]")
 
 args = vars(ap.parse_args())
 
