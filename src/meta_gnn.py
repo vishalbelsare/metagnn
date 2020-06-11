@@ -17,7 +17,7 @@ from igraph import *
 from collections import defaultdict
 from bidirectionalmap.bidirectionalmap import BidirectionalMap
 
-from torch_geometric.data import GraphSAINTRandomWalkSampler
+from torch_geometric.data import ClusterData, ClusterLoader
 from torch_geometric.data import DataLoader
 from torch_geometric.data import Data
 from torch_geometric.data import InMemoryDataset
@@ -290,8 +290,8 @@ class Metagenomic(InMemoryDataset):
 class Net(torch.nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.conv1 = GCNConv(dataset.num_features, 16, cached=True)
-        self.conv2 = GCNConv(16, int(dataset.num_classes), cached=True)
+        self.conv1 = GCNConv(dataset.num_features, 16, cached=False)
+        self.conv2 = GCNConv(16, int(dataset.num_classes), cached=False)
         # self.conv1 = ChebConv(data.num_features, 16, K=2)
         # self.conv2 = ChebConv(16, data.num_features, K=2)
 
@@ -307,64 +307,28 @@ class Net(torch.nn.Module):
 
 def train():
     model.train()
-    # model.set_aggr('add')
-
     total_loss = total_examples = 0
     for data in loader:
         data = data.to(device)
         optimizer.zero_grad()
-        out = model(data.x, data.edge_index, data.edge_norm * data.edge_attr)
-        loss = F.nll_loss(out, data.y, reduction='none')
-        loss = (loss * data.node_norm)[data.train_mask].sum()
-        loss.backward()
+        out = model(data)
+        loss = F.nll_loss(out[data.train_mask], data.y[data.train_mask].long(), reduction='none')
+        # loss = (loss * data.node_norm)[data.train_mask].sum()
+        loss.mean().backward()
         optimizer.step()
-        total_loss += loss.item() * data.num_nodes
+        total_loss += loss.mean().item() * data.num_nodes
         total_examples += data.num_nodes
     return total_loss / total_examples
-
-def train_full():
-    model.train()
-    model.set_aggr('mean')
-
-    optimizer.zero_grad()
-    out = model(data.x.to(device), data.edge_index.to(device))
-    loss = F.nll_loss(out[data.train_mask], data.y.to(device)[data.train_mask])
-    loss.backward()
-    optimizer.step()
-    return loss.item()
 
 @torch.no_grad()
 def test():
     model.eval()
-    model.set_aggr('mean')
-
-    out = model(data.x.to(device), data.edge_index.to(device))
-    pred = out.argmax(dim=-1)
-    correct = pred.eq(data.y.to(device))
-
-    accs = []
+    logits, accs = model(data), []
     for _, mask in data('train_mask', 'val_mask', 'test_mask'):
-        accs.append(correct[mask].sum().item() / mask.sum().item())
+        pred = logits[mask].max(1)[1]
+        acc = pred.eq(data.y[mask]).sum().item() / mask.sum().item()
+        accs.append(acc)
     return accs
-
-
-# def train():
-    # model.train()
-    # optimizer.zero_grad()
-    # F.nll_loss(model()[data.train_mask], data.y[data.train_mask].long()).backward()
-    # optimizer.step()
-
-
-# @torch.no_grad()
-# def test():
-    # model.eval()
-    # logits, accs = model(), []
-    # for _, mask in data('train_mask', 'val_mask', 'test_mask'):
-        # pred = logits[mask].max(1)[1]
-        # acc = pred.eq(data.y[mask]).sum().item() / mask.sum().item()
-        # accs.append(acc)
-    # return accs
-
 
 # Sample command
 # -------------------------------------------------------------------
@@ -429,37 +393,31 @@ logger.info("Graph construction done!")
 elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 
-logger.info("Training model")
+cluster_data = ClusterData(data, num_parts=1000, recursive=False,
+        save_dir=dataset.processed_dir)
+
+loader = ClusterLoader(cluster_data, batch_size=20, shuffle=False,
+        num_workers=5)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logger.info("Running GNN on: "+str(device))
 model = Net().to(device)
-# model, data = Net().to(device), data.to(device)
 
-loader = GraphSAINTRandomWalkSampler(data, batch_size=1024, walk_length=2,
-                                     num_steps=5, sample_coverage=1000,
-                                     save_dir=dataset.processed_dir,
-                                     num_workers=4)
 optimizer = torch.optim.Adam([
     dict(params=model.reg_params, weight_decay=5e-4),
     dict(params=model.non_reg_params, weight_decay=0)
 ], lr=0.01)
 
-for epoch in range(1, 51):
-    loss = train()
-    accs = test()
-    print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Train: {accs[0]:.4f}, '
-          f'Val: {accs[1]:.4f}, Test: {accs[2]:.4f}')
-
-# best_val_acc = test_acc = 0
-# for epoch in range(1, 20):
-    # train()
-    # train_acc, val_acc, tmp_test_acc = test()
-    # if val_acc > best_val_acc:
-        # best_val_acc = val_acc
-        # test_acc = tmp_test_acc
-    # log = 'Epoch: {:03d}, Train: {:.4f}, Val: {:.4f}, Test: {:.4f}'
-    # logger.info(log.format(epoch, train_acc, best_val_acc, test_acc))
+logger.info("Training model")
+best_val_acc = test_acc = 0
+for epoch in range(1, 20):
+    train()
+    train_acc, val_acc, tmp_test_acc = test()
+    if val_acc > best_val_acc:
+        best_val_acc = val_acc
+        test_acc = tmp_test_acc
+    log = 'Epoch: {:03d}, Train: {:.4f}, Val: {:.4f}, Test: {:.4f}'
+    logger.info(log.format(epoch, train_acc, best_val_acc, test_acc))
 
 """
 dataset = dataset
