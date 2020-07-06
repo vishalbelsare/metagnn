@@ -203,6 +203,11 @@ class Metagenomic(InMemoryDataset):
         assembly_graph.simplify(multiple=True, loops=False, combine_edges=None)
         clusters = assembly_graph.clusters()
         print("Clusters: " + str(len(clusters)))
+        # visual_style = {}
+        # visual_style["vertex_size"] = 20
+        # visual_style["bbox"] = (300, 300)
+        # visual_style["layout"] = assembly_graph.layout_random()
+        # plot(assembly_graph, "assembly.pdf", **visual_style)
 
 ## Construct taxa encoding 
 #-------------------------------
@@ -249,12 +254,16 @@ class Metagenomic(InMemoryDataset):
                     node_features.append(taxon_vector_map[taxon_id]) 
                 else: 
                     print(taxon_id)
+                
                 node_taxon.append(external_taxon_map[taxon_id])
                 # if max_len < len(feature_list):
                     # max_len = len(feature_list)
                 # node_features.append(feature_list)
                 line = file.readline()
 
+        # print(len(node_taxon))
+        # set_node_taxon = set(node_taxon)
+        # print(len(set_node_taxon))
         # print(node_features)
         # feature_vector = []
         # for node_list in node_features:
@@ -290,8 +299,8 @@ class Metagenomic(InMemoryDataset):
 class Net(torch.nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.conv1 = GCNConv(dataset.num_features, 16, cached=False)
-        self.conv2 = GCNConv(16, int(dataset.num_classes), cached=False)
+        self.conv1 = GCNConv(dataset.num_features, 128, cached=False)
+        self.conv2 = GCNConv(128, int(dataset.num_classes), cached=False)
 
         self.reg_params = self.conv1.parameters()
         self.non_reg_params = self.conv2.parameters()
