@@ -390,7 +390,7 @@ cluster_data = ClusterData(data, num_parts=1000, recursive=False,
 
 loader = ClusterLoader(cluster_data, batch_size=20, shuffle=False,
         num_workers=5)
-"""
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logger.info("Running GNN on: "+str(device))
 model = Net().to(device)
@@ -410,7 +410,6 @@ for epoch in range(1, 20):
         test_acc = tmp_test_acc
     log = 'Epoch: {:03d}, Train: {:.4f}, Val: {:.4f}, Test: {:.4f}'
     logger.info(log.format(epoch, train_acc, best_val_acc, test_acc))
-"""
 
 
 """
