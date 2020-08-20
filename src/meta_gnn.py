@@ -128,13 +128,10 @@ class Metagenomic(InMemoryDataset):
 
 ## Construct the assembly graph
 #-------------------------------
-
         # Get links from assembly_graph_with_scaffolds.gfa
         with open(assembly_graph_file) as file:
             line = file.readline()
-
             while line != "":
-
                 # Identify lines with link information
                 if "L" in line:
                     strings = line.split("\t")
@@ -144,16 +141,12 @@ class Metagenomic(InMemoryDataset):
                     links.append(strings[1]+strings[2]+" "+strings[3]+strings[4])
                 line = file.readline()
 
-
         # Create graph
         assembly_graph = Graph()
-
         # Add vertices
         assembly_graph.add_vertices(node_count)
-
         # Create list of edges
         edge_list = []
-
         # Name vertices
         for i in range(node_count):
             assembly_graph.vs[i]["id"]= i
@@ -161,25 +154,19 @@ class Metagenomic(InMemoryDataset):
 
         for i in range(len(paths)):
             segments = paths[str(contigs_map[i])]
-
             start = segments[0]
             start_rev = ""
-
             if start.endswith("+"):
                 start_rev = start[:-1]+"-"
             else:
                 start_rev = start[:-1]+"+"
-
             end = segments[1]
             end_rev = ""
-
             if end.endswith("+"):
                 end_rev = end[:-1]+"-"
             else:
                 end_rev = end[:-1]+"+"
-
             new_links = []
-
             if start in links_map:
                 new_links.extend(list(links_map[start]))
             if start_rev in links_map:
@@ -211,8 +198,8 @@ class Metagenomic(InMemoryDataset):
 
 ## Construct taxa encoding 
 #-------------------------------
-
         taxon_vector_map = defaultdict(set)
+        taxon_rank_map = defaultdict(set)
         external_taxon_map = defaultdict(set)
         with open(taxa_encoding) as file:
             line = file.readline()
@@ -220,47 +207,46 @@ class Metagenomic(InMemoryDataset):
                 strings = line.split("\t")
                 taxon_id = int(strings[0])
                 external_id = int(strings[1])
+                rank = strings[2]
                 external_taxon_map[external_id] = taxon_id
-                hashes = strings[2].split(" ")[:-1]
+                hashes = strings[3].split(" ")[:-1]
                 taxon_vector_map[external_id] = list(map(int, hashes))
+                taxon_rank_map[external_id] = rank
                 line = file.readline()
-
 
 ## Construct the feature vector from kraken2 output 
 #-------------------------------
-
         data_list = []
         node_features = []
         node_taxon = []
-
         max_len = 0
         # Get tax labels from kraken2 output 
         with open(taxa_file) as file:
             line = file.readline()
             while line != "":
-
-                if "C" in line:
-                    strings = line.split("\t")
-                    node_id = strings[1].split("_")[1]
-                    taxon_id = int(strings[2])
-                    # taxa = strings[4].split(" ")
-                    # feature_list = []
-                    # for taxon in taxa:
-                        # if ":" in taxon:
-                            # txid = int(taxon.split(":")[0])
-                            # feature_list.append(txid)
+                strings = line.split("\t")
+                node_id = strings[1].split("_")[1]
+                taxon_id = int(strings[2])
+                # taxa = strings[4].split(" ")
+                # feature_list = []
+                # for taxon in taxa:
+                    # if ":" in taxon:
+                        # txid = int(taxon.split(":")[0])
+                        # feature_list.append(txid)
                 # print(taxon_id)
                 if taxon_id in taxon_vector_map:
+                    # print(taxon_rank_map[taxon_id])
                     node_features.append(taxon_vector_map[taxon_id]) 
-                else: 
-                    print(taxon_id)
+                    node_taxon.append(external_taxon_map[taxon_id])
+                else:
+                    empty = [0] * len(taxon_vector_map[1])
+                    node_features.append(empty) 
+                    node_taxon.append(0)
                 
-                node_taxon.append(external_taxon_map[taxon_id])
                 # if max_len < len(feature_list):
                     # max_len = len(feature_list)
                 # node_features.append(feature_list)
                 line = file.readline()
-
         # print(len(node_taxon))
         # set_node_taxon = set(node_taxon)
         # print(len(set_node_taxon))
@@ -404,7 +390,7 @@ cluster_data = ClusterData(data, num_parts=1000, recursive=False,
 
 loader = ClusterLoader(cluster_data, batch_size=20, shuffle=False,
         num_workers=5)
-
+"""
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logger.info("Running GNN on: "+str(device))
 model = Net().to(device)
@@ -424,6 +410,8 @@ for epoch in range(1, 20):
         test_acc = tmp_test_acc
     log = 'Epoch: {:03d}, Train: {:.4f}, Val: {:.4f}, Test: {:.4f}'
     logger.info(log.format(epoch, train_acc, best_val_acc, test_acc))
+"""
+
 
 """
 dataset = dataset
