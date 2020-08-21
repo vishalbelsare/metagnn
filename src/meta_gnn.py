@@ -219,7 +219,10 @@ class Metagenomic(InMemoryDataset):
         data_list = []
         node_features = []
         node_taxon = []
+        species_nodes = []
+        other_nodes = []
         max_len = 0
+        idx = 0
         # Get tax labels from kraken2 output 
         with open(taxa_file) as file:
             line = file.readline()
@@ -234,15 +237,22 @@ class Metagenomic(InMemoryDataset):
                         # txid = int(taxon.split(":")[0])
                         # feature_list.append(txid)
                 # print(taxon_id)
+
                 if taxon_id in taxon_vector_map:
-                    # print(taxon_rank_map[taxon_id])
                     node_features.append(taxon_vector_map[taxon_id]) 
                     node_taxon.append(external_taxon_map[taxon_id])
                 else:
                     empty = [0] * len(taxon_vector_map[1])
                     node_features.append(empty) 
                     node_taxon.append(0)
-                
+
+                if taxon_rank_map[taxon_id] == "species":
+                    species_nodes.append(idx)
+                else:
+                    other_nodes.append(idx)
+		#increment the node idx
+                idx += 1
+
                 # if max_len < len(feature_list):
                     # max_len = len(feature_list)
                 # node_features.append(feature_list)
@@ -260,15 +270,23 @@ class Metagenomic(InMemoryDataset):
         x = torch.tensor(node_features, dtype=torch.float)
         y = torch.tensor(node_taxon, dtype=torch.float)
         edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
+
+        # print(species_nodes)
+        # print(len(species_nodes))
+        # print(len(other_nodes))
        
-        train_size = int(node_count/3)
-        val_size = train_size
-        train_index = torch.arange(train_size)
-        train_mask = index_to_mask(train_index, size=node_count)
-        val_index = torch.arange(train_size, train_size+val_size)
-        val_mask = index_to_mask(val_index, size=node_count)
-        test_index = torch.arange(train_size+val_size, node_count)
-        test_mask = index_to_mask(test_index, size=node_count)
+        train_mask = index_to_mask(species_nodes[:len(species_nodes)//2], size=node_count)
+        val_mask = index_to_mask(species_nodes[len(species_nodes)//2:], size=node_count)
+        test_mask = index_to_mask(other_nodes, size=node_count)
+            
+        # train_size = int(node_count/3)
+        # val_size = train_size
+        # train_index = torch.arange(train_size)
+        # train_mask = index_to_mask(train_index, size=node_count)
+        # val_index = torch.arange(train_size, train_size+val_size)
+        # val_mask = index_to_mask(val_index, size=node_count)
+        # test_index = torch.arange(train_size+val_size, node_count)
+        # test_mask = index_to_mask(test_index, size=node_count)
 
         data = Data(x=x, edge_index=edge_index, y=y)
         data.train_mask = train_mask
