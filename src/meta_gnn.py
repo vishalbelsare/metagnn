@@ -4,6 +4,7 @@ import subprocess
 import csv
 import operator
 import time
+import random
 import argparse
 import re
 import logging
@@ -223,6 +224,7 @@ class Metagenomic(InMemoryDataset):
         other_nodes = []
         max_len = 0
         idx = 0
+        f = open("taxon_rank", "w")
         # Get tax labels from kraken2 output 
         with open(taxa_file) as file:
             line = file.readline()
@@ -241,12 +243,13 @@ class Metagenomic(InMemoryDataset):
                 if taxon_id in taxon_vector_map:
                     node_features.append(taxon_vector_map[taxon_id]) 
                     node_taxon.append(external_taxon_map[taxon_id])
+                    f.write(str(node_id) + '\t' + str(taxon_id) + '\t' + taxon_rank_map[taxon_id] + '\n')
                 else:
                     empty = [0] * len(taxon_vector_map[1])
                     node_features.append(empty) 
                     node_taxon.append(0)
 
-                if taxon_rank_map[taxon_id] == "species":
+                if taxon_rank_map[taxon_id] in ['species', 'no rank']:
                     species_nodes.append(idx)
                 else:
                     other_nodes.append(idx)
@@ -270,23 +273,15 @@ class Metagenomic(InMemoryDataset):
         x = torch.tensor(node_features, dtype=torch.float)
         y = torch.tensor(node_taxon, dtype=torch.float)
         edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
+        f.close()
 
-        # print(species_nodes)
-        # print(len(species_nodes))
-        # print(len(other_nodes))
-       
-        train_mask = index_to_mask(species_nodes[:len(species_nodes)//2], size=node_count)
-        val_mask = index_to_mask(species_nodes[len(species_nodes)//2:], size=node_count)
-        test_mask = index_to_mask(other_nodes, size=node_count)
-            
-        # train_size = int(node_count/3)
-        # val_size = train_size
-        # train_index = torch.arange(train_size)
-        # train_mask = index_to_mask(train_index, size=node_count)
-        # val_index = torch.arange(train_size, train_size+val_size)
-        # val_mask = index_to_mask(val_index, size=node_count)
-        # test_index = torch.arange(train_size+val_size, node_count)
-        # test_mask = index_to_mask(test_index, size=node_count)
+        node_idxs = list(range(1, node_count))
+        random.shuffle(node_idxs)
+        train_size = int(node_count/3)
+        val_size = train_size
+        train_mask = index_to_mask(node_idxs[:train_size], size=node_count)
+        val_mask = index_to_mask(node_idxs[train_size:train_size+val_size], size=node_count)
+        test_mask = index_to_mask(node_idxs[train_size+val_size:], size=node_count)
 
         data = Data(x=x, edge_index=edge_index, y=y)
         data.train_mask = train_mask
@@ -341,6 +336,24 @@ def test():
             acc = pred.eq(data.y[mask]).sum().item() / mask.sum().item()
             accs.append(acc)
     return accs
+
+@torch.no_grad()
+def output():
+    model.eval()
+    f = open("gnn.out", "w")
+    node_idx = 0
+    for data in loader:
+        data = data.to(device)
+        logits = model(data)
+        node_count = len(data.y)
+        all_idxs = list(range(1, node_count))
+        all_mask = index_to_mask(all_idxs, size=node_count)
+        pred = logits[all_mask].max(1)[1]
+        pred_list = pred.tolist()
+        for val in pred_list:
+            f.write(str(node_idx) + '\t' + str(val) + '\n')
+            node_idx += 1
+    f.close()
 
 # Sample command
 # -------------------------------------------------------------------
@@ -429,6 +442,7 @@ for epoch in range(1, 20):
     log = 'Epoch: {:03d}, Train: {:.4f}, Val: {:.4f}, Test: {:.4f}'
     logger.info(log.format(epoch, train_acc, best_val_acc, test_acc))
 
+output()
 
 """
 dataset = dataset
