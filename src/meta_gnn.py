@@ -224,7 +224,6 @@ class Metagenomic(InMemoryDataset):
         other_nodes = []
         max_len = 0
         idx = 0
-        f = open("taxon_rank", "w")
         # Get tax labels from kraken2 output 
         with open(taxa_file) as file:
             line = file.readline()
@@ -243,12 +242,10 @@ class Metagenomic(InMemoryDataset):
                 if taxon_id in taxon_vector_map:
                     node_features.append(taxon_vector_map[taxon_id]) 
                     node_taxon.append(external_taxon_map[taxon_id])
-                    f.write(str(node_id) + '\t' + str(taxon_id) + '\t' + taxon_rank_map[taxon_id] + '\n')
                 else:
                     empty = [0] * len(taxon_vector_map[1])
                     node_features.append(empty) 
                     node_taxon.append(0)
-                    f.write(str(node_id) + '\t' + str(0) + '\n')
 
                 if taxon_rank_map[taxon_id] in ['species', 'no rank']:
                     species_nodes.append(idx)
@@ -274,7 +271,6 @@ class Metagenomic(InMemoryDataset):
         x = torch.tensor(node_features, dtype=torch.float)
         y = torch.tensor(node_taxon, dtype=torch.float)
         edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
-        f.close()
 
         node_idxs = list(range(1, node_count))
         random.shuffle(node_idxs)
