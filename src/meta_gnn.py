@@ -122,6 +122,14 @@ class Metagenomic(InMemoryDataset):
         contigs_map = my_map
         contigs_map_rev = my_map.inverse
 
+# print the contigs map
+	contig_map_f = output_dir + "/contig_map.out"
+	cf = open(contig_map_f, "w")
+	for i in range(node_count):
+	  cf.write(str(i) + '\t' + str(contigs_map[i]) + '\n')
+	  i += 1
+	cf.close()
+
         links = []
         links_map = defaultdict(set)
         source_nodes = []
@@ -338,30 +346,21 @@ def test():
 def output(output_dir):
     model.eval()
     gnn_f = output_dir + "/gnn.out"
-    kraken_f = output_dir + "/kraken.out"
     gf = open(gnn_f, "w")
-    kf = open(kraken_f, "w")
     node_idx = 0
+    node_count = len(data.y)
+    all_idxs = list(range(1, node_count))
+    all_mask = index_to_mask(all_idxs, size=node_count)
     for data in loader:
         data = data.to(device)
         logits = model(data)
-        node_count = len(data.y)
-        all_idxs = list(range(1, node_count))
-        all_mask = index_to_mask(all_idxs, size=node_count)
         pred = logits[all_mask].max(1)[1]
         pred_list = pred.tolist()
         for val in pred_list:
             gf.write(str(node_idx) + '\t' + str(val) + '\n')
             node_idx += 1
-        org = data.y[all_mask]
-        org_list = org.tolist()
-        node_idx = 0
-        for val in org_list:
-            kf.write(str(node_idx) + '\t' + str(int(val)) + '\n')
-            node_idx += 1
-    
+        
     gf.close()
-    kf.close()
 
 # Sample command
 # -------------------------------------------------------------------
