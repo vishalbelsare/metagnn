@@ -83,6 +83,7 @@ class Metagenomic(InMemoryDataset):
         paths = {}
         segment_contigs = {}
         node_count = 0
+	name_map = BidirectionalMap()
         my_map = BidirectionalMap()
         current_contig_num = ""
 
@@ -103,6 +104,7 @@ class Metagenomic(InMemoryDataset):
 
                 if current_contig_num != contig_num:
                     my_map[node_count] = int(contig_num)
+		    name_map[node_count] = name
                     current_contig_num = contig_num
                     node_count += 1
 
@@ -126,7 +128,7 @@ class Metagenomic(InMemoryDataset):
 	contig_map_f = output_dir + "/contig_map.out"
 	cf = open(contig_map_f, "w")
 	for i in range(node_count):
-	  cf.write(str(i) + '\t' + str(contigs_map[i]) + '\n')
+	  cf.write(str(i) + '\t' + str(name_map[i]) + '\n')
 	  i += 1
 	cf.close()
 
