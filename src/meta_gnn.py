@@ -248,6 +248,7 @@ class Metagenomic(InMemoryDataset):
                     empty = [0] * len(taxon_vector_map[1])
                     node_features.append(empty) 
                     node_taxon.append(0)
+                    f.write(str(node_id) + '\t' + str(0) + '\n')
 
                 if taxon_rank_map[taxon_id] in ['species', 'no rank']:
                     species_nodes.append(idx)
@@ -338,9 +339,12 @@ def test():
     return accs
 
 @torch.no_grad()
-def output():
+def output(output_dir):
     model.eval()
-    f = open("gnn.out", "w")
+    gnn_f = output_dir + "/gnn.out"
+    kraken_f = output_dir + "/kraken.out"
+    gf = open(gnn_f, "w")
+    kf = open(kraken_f, "w")
     node_idx = 0
     for data in loader:
         data = data.to(device)
@@ -351,9 +355,17 @@ def output():
         pred = logits[all_mask].max(1)[1]
         pred_list = pred.tolist()
         for val in pred_list:
-            f.write(str(node_idx) + '\t' + str(val) + '\n')
+            gf.write(str(node_idx) + '\t' + str(val) + '\n')
             node_idx += 1
-    f.close()
+        org = data.y[all_mask]
+        org_list = org.tolist()
+        node_idx = 0
+        for val in org_list:
+            kf.write(str(node_idx) + '\t' + str(int(val)) + '\n')
+            node_idx += 1
+    
+    gf.close()
+    kf.close()
 
 # Sample command
 # -------------------------------------------------------------------
@@ -376,18 +388,20 @@ start_time = time.time()
 
 ap = argparse.ArgumentParser()
 
-ap.add_argument("-i", "--input", required=True, help="path to the assembly graph file")
-ap.add_argument("-n", "--name", required=True, help="path to the contigs.paths file")
+ap.add_argument("-i", "--input", required=True, help="path to the input files")
+ap.add_argument("-n", "--name", required=True, help="name of the dataset")
+ap.add_argument("-o", "--output", required=True, help="output directory")
 
 args = vars(ap.parse_args())
 
 input_dir = args["input"]
 data_name = args["name"]
+output_dir = args["output"]
 
 # Setup output path for log file
 #---------------------------------------------------
 
-fileHandler = logging.FileHandler(input_dir+"/"+"metagnn.log")
+fileHandler = logging.FileHandler(output_dir+"/"+"metagnn.log")
 fileHandler.setLevel(logging.INFO)
 fileHandler.setFormatter(formatter)
 logger.addHandler(fileHandler)
@@ -442,7 +456,7 @@ for epoch in range(1, 20):
     log = 'Epoch: {:03d}, Train: {:.4f}, Val: {:.4f}, Test: {:.4f}'
     logger.info(log.format(epoch, train_acc, best_val_acc, test_acc))
 
-output()
+output(output_dir)
 
 """
 dataset = dataset
