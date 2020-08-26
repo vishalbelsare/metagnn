@@ -83,7 +83,7 @@ class Metagenomic(InMemoryDataset):
         paths = {}
         segment_contigs = {}
         node_count = 0
-	name_map = BidirectionalMap()
+        name_map = BidirectionalMap()
         my_map = BidirectionalMap()
         current_contig_num = ""
 
@@ -104,7 +104,7 @@ class Metagenomic(InMemoryDataset):
 
                 if current_contig_num != contig_num:
                     my_map[node_count] = int(contig_num)
-		    name_map[node_count] = name
+                    name_map[node_count] = name
                     current_contig_num = contig_num
                     node_count += 1
 
@@ -125,12 +125,12 @@ class Metagenomic(InMemoryDataset):
         contigs_map_rev = my_map.inverse
 
 # print the contigs map
-	contig_map_f = output_dir + "/contig_map.out"
-	cf = open(contig_map_f, "w")
-	for i in range(node_count):
-	  cf.write(str(i) + '\t' + str(name_map[i]) + '\n')
-	  i += 1
-	cf.close()
+        contig_map_f = output_dir + "/contig_map.out"
+        cf = open(contig_map_f, "w")
+        for i in range(node_count):
+            cf.write(str(i) + '\t' + str(name_map[i]))
+            i += 1
+        cf.close()
 
         links = []
         links_map = defaultdict(set)
@@ -350,11 +350,11 @@ def output(output_dir):
     gnn_f = output_dir + "/gnn.out"
     gf = open(gnn_f, "w")
     node_idx = 0
-    node_count = len(data.y)
-    all_idxs = list(range(1, node_count))
-    all_mask = index_to_mask(all_idxs, size=node_count)
     for data in loader:
         data = data.to(device)
+        node_count = len(data.y)
+        all_idxs = list(range(1, node_count))
+        all_mask = index_to_mask(all_idxs, size=node_count)
         logits = model(data)
         pred = logits[all_mask].max(1)[1]
         pred_list = pred.tolist()
