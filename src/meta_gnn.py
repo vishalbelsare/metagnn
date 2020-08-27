@@ -300,6 +300,7 @@ class Metagenomic(InMemoryDataset):
 
         x = torch.tensor(node_features, dtype=torch.float)
         y = torch.tensor(node_taxon, dtype=torch.float)
+        n = torch.tensor(list(range(1, node_count)), dtype=torch.int)
         edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
 
         node_idxs = list(range(1, node_count))
@@ -310,7 +311,7 @@ class Metagenomic(InMemoryDataset):
         val_mask = index_to_mask(node_idxs[train_size:train_size+val_size], size=node_count)
         test_mask = index_to_mask(node_idxs[train_size+val_size:], size=node_count)
 
-        data = Data(x=x, edge_index=edge_index, y=y)
+        data = Data(x=x, edge_index=edge_index, y=y, n=n)
         data.train_mask = train_mask
         data.val_mask = val_mask
         data.test_mask = test_mask
@@ -463,6 +464,24 @@ cluster_data = ClusterData(data, num_parts=1000, recursive=False,
 
 loader = ClusterLoader(cluster_data, batch_size=20, shuffle=False,
         num_workers=5)
+
+ext_taxon_map_rev = external_taxon_map.inverse
+f = open('temp', 'w')
+for data in loader:
+    label = data.y.tolist()
+    name = data.n.tolist()
+    for l,n in zip(label,name):
+        f.write(str(int(n)) + " " + str(ext_taxon_map_rev[l]) + '\n')
+f.close()
+
+simple_loader = DataLoader(dataset, batch_size=5, shuffle=False, num_workers=1)
+f = open('temp_s', 'w')
+for data in simple_loader:
+    label = data.y.tolist()
+    name = data.n.tolist()
+    for l,n in zip(label,name):
+        f.write(str(int(n)) + " " + str(ext_taxon_map_rev[l]) + '\n')
+f.close()
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logger.info("Running GNN on: "+str(device))
