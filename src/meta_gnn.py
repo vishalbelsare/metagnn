@@ -34,6 +34,40 @@ def resize(l, newsize, filling=None):
     else:
         del l[newsize:]
 
+name_map = BidirectionalMap()
+external_taxon_map = BidirectionalMap()
+
+def populate_name_map(file_name):
+    node_count = 0
+    current_contig_num = ""
+    with open(file_name) as file:
+        name = file.readline()
+        path = file.readline()
+        while name != "" and path != "":
+            while ";" in path:
+                path = path[:-2]+","+file.readline()
+            start = 'NODE_'
+            end = '_length_'
+            contig_num = str(int(re.search('%s(.*)%s' % (start, end), name).group(1)))
+            segments = path.rstrip().split(",")
+            if current_contig_num != contig_num:
+                name_map[node_count] = name.rstrip("\n")
+                current_contig_num = contig_num
+                node_count += 1
+            name = file.readline()
+            path = file.readline()
+
+def populate_external_map(file_name):
+    external_taxon_map[0] = 0
+    with open(file_name) as file:
+        line = file.readline()
+        while line != "":
+            strings = line.split("\t")
+            taxon_id = int(strings[0])
+            external_id = int(strings[1])
+            external_taxon_map[external_id] = taxon_id
+            line = file.readline()
+
 class Metagenomic(InMemoryDataset):
     r""" Assembly graph built over raw metagenomic data using spades.
         Nodes represent contigs and edges represent link between them.
@@ -83,8 +117,7 @@ class Metagenomic(InMemoryDataset):
         paths = {}
         segment_contigs = {}
         node_count = 0
-        name_map = BidirectionalMap()
-        my_map = BidirectionalMap()
+        contigs_map = BidirectionalMap()
         current_contig_num = ""
 
         with open(contig_paths) as file:
@@ -103,8 +136,7 @@ class Metagenomic(InMemoryDataset):
                 segments = path.rstrip().split(",")
 
                 if current_contig_num != contig_num:
-                    my_map[node_count] = int(contig_num)
-                    name_map[node_count] = name
+                    contigs_map[node_count] = int(contig_num)
                     current_contig_num = contig_num
                     node_count += 1
 
@@ -120,17 +152,7 @@ class Metagenomic(InMemoryDataset):
                 name = file.readline()
                 path = file.readline()
 
-
-        contigs_map = my_map
-        contigs_map_rev = my_map.inverse
-
-# print the contigs map
-        contig_map_f = output_dir + "/contig_map.out"
-        cf = open(contig_map_f, "w")
-        for i in range(node_count):
-            cf.write(str(i) + '\t' + str(name_map[i]))
-            i += 1
-        cf.close()
+        contigs_map_rev = contigs_map.inverse
 
         links = []
         links_map = defaultdict(set)
@@ -210,8 +232,7 @@ class Metagenomic(InMemoryDataset):
 ## Construct taxa encoding 
 #-------------------------------
         taxon_vector_map = defaultdict(set)
-        taxon_rank_map = defaultdict(set)
-        external_taxon_map = defaultdict(set)
+        taxon_rank_map = defaultdict(str)
         with open(taxa_encoding) as file:
             line = file.readline()
             while line != "":
@@ -219,7 +240,6 @@ class Metagenomic(InMemoryDataset):
                 taxon_id = int(strings[0])
                 external_id = int(strings[1])
                 rank = strings[2]
-                external_taxon_map[external_id] = taxon_id
                 hashes = strings[3].split(" ")[:-1]
                 taxon_vector_map[external_id] = list(map(int, hashes))
                 taxon_rank_map[external_id] = rank
@@ -312,10 +332,10 @@ class Net(torch.nn.Module):
         self.non_reg_params = self.conv2.parameters()
 
     def forward(self, data):
-        x, edge_index, edge_weight = data.x.float(), data.edge_index, data.edge_attr
-        x = F.relu(self.conv1(x, edge_index, edge_weight))
+        x, edge_index = data.x.float(), data.edge_index
+        x = F.relu(self.conv1(x, edge_index))
         x = F.dropout(x, training=self.training)
-        x = self.conv2(x, edge_index, edge_weight)
+        x = self.conv2(x, edge_index)
         return F.log_softmax(x, dim=1)
 
 def train():
@@ -333,36 +353,45 @@ def train():
     return total_loss / total_examples
 
 @torch.no_grad()
-def test():
+def test(out):
     model.eval()
     for data in loader:
         data = data.to(device)
         logits, accs = model(data), []
         for _, mask in data('train_mask', 'val_mask', 'test_mask'):
-            pred = logits[mask].max(1)[1]
+            _, pred = logits[mask].max(1)
             acc = pred.eq(data.y[mask]).sum().item() / mask.sum().item()
             accs.append(acc)
+
     return accs
 
 @torch.no_grad()
 def output(output_dir):
-    model.eval()
     gnn_f = output_dir + "/gnn.out"
     gf = open(gnn_f, "w")
+    k_f = output_dir + "/kraken_label.out"
+    kf = open(k_f, "w")
     node_idx = 0
+    node_idx_1 = 0
+    ext_taxon_map_rev = external_taxon_map.inverse
     for data in loader:
         data = data.to(device)
-        node_count = len(data.y)
-        all_idxs = list(range(1, node_count))
-        all_mask = index_to_mask(all_idxs, size=node_count)
-        logits = model(data)
-        pred = logits[all_mask].max(1)[1]
-        pred_list = pred.tolist()
+        _, preds = model(data).max(dim=1)
+        pred_list = preds.tolist()
         for val in pred_list:
-            gf.write(str(node_idx) + '\t' + str(val) + '\n')
+            name = name_map[node_idx]
+            taxon = str(ext_taxon_map_rev[val])  
+            gf.write(name + '\t' + str(ext_taxon_map_rev[val]) + '\n')
             node_idx += 1
-        
+        label_list = data.y.tolist()
+        for val in label_list:
+            name = name_map[node_idx_1]
+            taxon = str(ext_taxon_map_rev[val])  
+            kf.write(name + '\t' + str(ext_taxon_map_rev[val]) + '\n')
+            node_idx_1 += 1
+
     gf.close()
+    kf.close()
 
 # Sample command
 # -------------------------------------------------------------------
@@ -414,6 +443,8 @@ logger.info("MetaGNN started")
 
 logger.info("Constructing the assembly graph and node feature vectors")
 
+populate_name_map(osp.join(input_dir, data_name, 'raw', 'contigs.paths'))
+populate_external_map(osp.join(input_dir, data_name, 'raw', 'taxa.encoding'))
 dataset = Metagenomic(root=input_dir, name=data_name)
 data = dataset[0]
 print(data)
@@ -446,7 +477,8 @@ logger.info("Training model")
 best_val_acc = test_acc = 0
 for epoch in range(1, 20):
     train()
-    train_acc, val_acc, tmp_test_acc = test()
+    out = True if epoch == 19 else False
+    train_acc, val_acc, tmp_test_acc = test(out)
     if val_acc > best_val_acc:
         best_val_acc = val_acc
         test_acc = tmp_test_acc

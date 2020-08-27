@@ -20,18 +20,20 @@ with open(kraken_file) as file:
     line = file.readline()
     while line != "":
         strings = line.split("\t")
-        if strings[1] != "\n":
-            kraken_map[strings[0]] = int(strings[1])
+        idx = len(strings) - 1
+        if strings[idx] != "\n":
+            kraken_map[strings[0]] = int(strings[idx])
         line = file.readline()
 
 with open(taxa_align_file) as file:
     line = file.readline()
     while line != "":
         strings = line.split("\t")
-        if strings[1] == "__Unclassified__":
+        idx = len(strings) - 1
+        if strings[idx] == "|\n":
             taxa_align_map[strings[0]] = 0
         else:
-            taxa_align_map[strings[0]] = int(strings[2])
+            taxa_align_map[strings[0]] = int(strings[idx])
         line = file.readline()
 
 true_pos = 0
