@@ -223,11 +223,6 @@ class Metagenomic(InMemoryDataset):
         assembly_graph.simplify(multiple=True, loops=False, combine_edges=None)
         clusters = assembly_graph.clusters()
         print("Clusters: " + str(len(clusters)))
-        # visual_style = {}
-        # visual_style["vertex_size"] = 20
-        # visual_style["bbox"] = (300, 300)
-        # visual_style["layout"] = assembly_graph.layout_random()
-        # plot(assembly_graph, "assembly.pdf", **visual_style)
 
 ## Construct taxa encoding 
 #-------------------------------
@@ -261,13 +256,6 @@ class Metagenomic(InMemoryDataset):
                 strings = line.split("\t")
                 node_id = strings[1].split("_")[1]
                 taxon_id = int(strings[2])
-                # taxa = strings[4].split(" ")
-                # feature_list = []
-                # for taxon in taxa:
-                    # if ":" in taxon:
-                        # txid = int(taxon.split(":")[0])
-                        # feature_list.append(txid)
-                # print(taxon_id)
 
                 if taxon_id in taxon_vector_map:
                     node_features.append(taxon_vector_map[taxon_id]) 
@@ -284,19 +272,7 @@ class Metagenomic(InMemoryDataset):
 		#increment the node idx
                 idx += 1
 
-                # if max_len < len(feature_list):
-                    # max_len = len(feature_list)
-                # node_features.append(feature_list)
                 line = file.readline()
-        # print(len(node_taxon))
-        # set_node_taxon = set(node_taxon)
-        # print(len(set_node_taxon))
-        # print(node_features)
-        # feature_vector = []
-        # for node_list in node_features:
-            # if len(node_list) < max_len:
-                # resize(node_list, max_len, 0)
-            # feature_vector.append(node_list)
 
         x = torch.tensor(node_features, dtype=torch.float)
         y = torch.tensor(node_taxon, dtype=torch.float)
@@ -370,17 +346,16 @@ def test(out):
 def output(output_dir):
     gnn_f = output_dir + "/gnn.out"
     gf = open(gnn_f, "w")
-    node_idx = 0
     ext_taxon_map_rev = external_taxon_map.inverse
     for data in loader:
         data = data.to(device)
         _, preds = model(data).max(dim=1)
         pred_list = preds.tolist()
-        for val in pred_list:
-            name = name_map[node_idx]
+        perm = data.n.tolist()
+        for idx,val in zip(perm,pred_list):
+            name = name_map[idx]
             taxon = str(ext_taxon_map_rev[val])  
             gf.write(name + '\t' + str(ext_taxon_map_rev[val]) + '\n')
-            node_idx += 1
     
     gf.close()
 
@@ -439,11 +414,6 @@ populate_external_map(osp.join(input_dir, data_name, 'raw', 'taxa.encoding'))
 dataset = Metagenomic(root=input_dir, name=data_name)
 data = dataset[0]
 print(data)
-# print(data.num_features)
-# print(dataset.num_classes)
-# print("X: " + data.x.type())
-# print("Edge Index: " + data.edge_index.type())
-# print("Y: " + data.y.type())
 
 logger.info("Graph construction done!")
 elapsed_time = time.time() - start_time
@@ -454,24 +424,6 @@ cluster_data = ClusterData(data, num_parts=1000, recursive=False,
 
 loader = ClusterLoader(cluster_data, batch_size=20, shuffle=False,
         num_workers=5)
-
-ext_taxon_map_rev = external_taxon_map.inverse
-f = open('temp', 'w')
-for data in loader:
-    label = data.y.tolist()
-    name = data.n.tolist()
-    for l,n in zip(label,name):
-        f.write(str(int(n)) + " " + str(ext_taxon_map_rev[l]) + '\n')
-f.close()
-
-simple_loader = DataLoader(dataset, batch_size=5, shuffle=False, num_workers=1)
-f = open('temp_s', 'w')
-for data in simple_loader:
-    label = data.y.tolist()
-    name = data.n.tolist()
-    for l,n in zip(label,name):
-        f.write(str(int(n)) + " " + str(ext_taxon_map_rev[l]) + '\n')
-f.close()
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logger.info("Running GNN on: "+str(device))
@@ -493,62 +445,9 @@ for epoch in range(1, 20):
         test_acc = tmp_test_acc
     log = 'Epoch: {:03d}, Train: {:.4f}, Val: {:.4f}, Test: {:.4f}'
     logger.info(log.format(epoch, train_acc, best_val_acc, test_acc))
-
-output(output_dir)
-
-"""
-dataset = dataset
-train_size = int(dataset[0].num_nodes/3)
-val_size = 1000
-dataset = dataset.shuffle()
-train_dataset = dataset[:train_size]
-val_dataset = dataset[train_size:train_size+val_size]
-test_dataset = dataset[train_size+val_size:]
-len(train_dataset), len(val_dataset), len(test_dataset)
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = Net().to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
-crit = torch.nn.BCELoss()
-batch_size=512
-train_loader = DataLoader(train_dataset, batch_size=batch_size)
-val_loader = DataLoader(val_dataset, batch_size=batch_size)
-test_loader = DataLoader(test_dataset, batch_size=batch_size)
-
-for epoch in range(1):
-    train()
-
-for epoch in range(1):
-    loss = train()
-    train_acc = evaluate(train_loader)
-    val_acc = evaluate(val_loader)    
-    test_acc = evaluate(test_loader)
-    print('Epoch: {:03d}, Loss: {:.5f}, Train Auc: {:.5f}, Val Auc: {:.5f}, Test Auc: {:.5f}'.
-          format(epoch, loss, train_acc, val_acc, test_acc))
-"""
-
-"""
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = Net().to(device)
-data = dataset[0].to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
-
-model.train()
-for epoch in range(200):
-    optimizer.zero_grad()
-    out = model(data)
-    loss = F.nll_loss(out[data.train_mask], data.y[data.train_mask])
-    loss.backward()
-    optimizer.step()
-
-model.eval()
-_, pred = model(data).max(dim=1)
-correct = float (pred[data.test_mask].eq(data.y[data.test_mask]).sum().item())
-acc = correct / data.test_mask.sum().item()
-print('Accuracy: {:.4f}'.format(acc))
-"""
-
 elapsed_time = time.time() - start_time
-
 # Print elapsed time for the process
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
+
+#Print GCN model output
+output(output_dir)
