@@ -300,7 +300,7 @@ class Metagenomic(InMemoryDataset):
 
         x = torch.tensor(node_features, dtype=torch.float)
         y = torch.tensor(node_taxon, dtype=torch.float)
-        n = torch.tensor(list(range(1, node_count)), dtype=torch.int)
+        n = torch.tensor(list(range(0, node_count)), dtype=torch.int)
         edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
 
         node_idxs = list(range(1, node_count))
@@ -370,10 +370,7 @@ def test(out):
 def output(output_dir):
     gnn_f = output_dir + "/gnn.out"
     gf = open(gnn_f, "w")
-    k_f = output_dir + "/kraken_label.out"
-    kf = open(k_f, "w")
     node_idx = 0
-    node_idx_1 = 0
     ext_taxon_map_rev = external_taxon_map.inverse
     for data in loader:
         data = data.to(device)
@@ -384,15 +381,8 @@ def output(output_dir):
             taxon = str(ext_taxon_map_rev[val])  
             gf.write(name + '\t' + str(ext_taxon_map_rev[val]) + '\n')
             node_idx += 1
-        label_list = data.y.tolist()
-        for val in label_list:
-            name = name_map[node_idx_1]
-            taxon = str(ext_taxon_map_rev[val])  
-            kf.write(name + '\t' + str(ext_taxon_map_rev[val]) + '\n')
-            node_idx_1 += 1
-
+    
     gf.close()
-    kf.close()
 
 # Sample command
 # -------------------------------------------------------------------
