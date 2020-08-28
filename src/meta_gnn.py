@@ -14,6 +14,7 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
 
+from Bio import SeqIO
 from igraph import *
 from collections import defaultdict
 from bidirectionalmap.bidirectionalmap import BidirectionalMap
@@ -68,6 +69,35 @@ def populate_external_map(file_name):
             external_taxon_map[external_id] = taxon_id
             line = file.readline()
 
+def peek_line(f):
+    pos = f.tell()
+    line = f.readline()
+    f.seek(pos)
+    return line
+
+def compute_gc_bias(file_name):
+    gc_map = BidirectionalMap()
+    with open(file_name) as file:
+        line = file.readline()
+        if line.startswith('>'):
+            name = line.lstrip('>')
+            name = name.rstrip('\n')
+            seq = ''
+            seq_line = peek_line(file)
+            while '>' not in seq_line:
+                seq_line = peek_line(file)
+                seq_line.rstrip('\n')
+                seq = seq + seq_line
+                seq_line = peek_line(file)
+            gc_map[name] = seq
+        line = file.readline()
+
+    cnt = 0
+    for name in gc_map:
+        cnt += 1
+        #print(name + ' ' + gc_map[name])
+    print(cnt)
+
 class Metagenomic(InMemoryDataset):
     r""" Assembly graph built over raw metagenomic data using spades.
         Nodes represent contigs and edges represent link between them.
@@ -99,7 +129,7 @@ class Metagenomic(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        return ['assembly_graph_with_scaffolds.gfa', 'contigs.paths', 'kraken2.out', 'taxa.encoding']
+        return ['assembly_graph_with_scaffolds.gfa', 'contigs.paths', 'contigs.fasta', 'kraken2.out', 'taxa.encoding']
 
     @property
     def processed_file_names(self):
@@ -111,8 +141,9 @@ class Metagenomic(InMemoryDataset):
     def process(self):
         assembly_graph_file = osp.join(self.raw_dir, self.raw_file_names[0])
         contig_paths = osp.join(self.raw_dir, self.raw_file_names[1])
-        taxa_file = osp.join(self.raw_dir, self.raw_file_names[2])
-        taxa_encoding = osp.join(self.raw_dir, self.raw_file_names[3])
+        contig_fasta = osp.join(self.raw_dir, self.raw_file_names[2])
+        taxa_file = osp.join(self.raw_dir, self.raw_file_names[3])
+        taxa_encoding = osp.join(self.raw_dir, self.raw_file_names[4])
         # Read assembly graph and node features from the file into arrays
         paths = {}
         segment_contigs = {}
@@ -295,6 +326,7 @@ class Metagenomic(InMemoryDataset):
 
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
+        compute_gc_bias(contig_fasta)
 
     def __repr__(self):
         return '{}()'.format(self.name)
