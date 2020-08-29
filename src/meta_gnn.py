@@ -1,3 +1,4 @@
+from __future__ import division
 import sys
 import os
 import subprocess
@@ -14,7 +15,6 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
 
-from Bio import SeqIO
 from igraph import *
 from collections import defaultdict
 from bidirectionalmap.bidirectionalmap import BidirectionalMap
@@ -75,28 +75,49 @@ def peek_line(f):
     f.seek(pos)
     return line
 
-def compute_gc_bias(file_name):
-    gc_map = BidirectionalMap()
+
+tetra_list = []
+def compute_tetra_list():
+    for a in ['A', 'C', 'T', 'G']:
+        for b in ['A', 'C', 'T', 'G']:
+            for c in ['A', 'C', 'T', 'G']:
+                for d in ['A', 'C', 'T', 'G']:
+                    tetra_list.append(a+b+c+d)
+
+def compute_tetra_freq(seq):
+    tetra_cnt = []
+    for tetra in tetra_list:
+        tetra_cnt.append(seq.count(tetra))
+    return tetra_cnt
+
+def compute_gc_bias(seq):
+    seqlist = list(seq)
+    gc_cnt = seqlist.count('G') + seqlist.count('C')
+    gc_frac = gc_cnt/len(seq)
+    return gc_frac
+
+def compute_contig_features(file_name):
+    compute_tetra_list()
+    gc_map = defaultdict(float) 
+    tetra_freq_map = defaultdict(list)
     with open(file_name) as file:
         line = file.readline()
-        if line.startswith('>'):
+        while '>' in line:
             name = line.lstrip('>')
             name = name.rstrip('\n')
-            seq = ''
             seq_line = peek_line(file)
-            while '>' not in seq_line:
-                seq_line = peek_line(file)
+            seq = ''
+            while seq_line != "" and '>' not in seq_line:
+                seq_line = file.readline()
                 seq_line.rstrip('\n')
                 seq = seq + seq_line
                 seq_line = peek_line(file)
-            gc_map[name] = seq
-        line = file.readline()
-
-    cnt = 0
-    for name in gc_map:
-        cnt += 1
-        #print(name + ' ' + gc_map[name])
-    print(cnt)
+            gc_map[name] = compute_gc_bias(seq)
+            tetra_freq_map[name] = compute_tetra_freq(seq)
+            line = file.readline()
+    print(len(gc_map))
+    print(len(tetra_freq_map))
+    return gc_map, tetra_freq_map
 
 class Metagenomic(InMemoryDataset):
     r""" Assembly graph built over raw metagenomic data using spades.
@@ -326,7 +347,7 @@ class Metagenomic(InMemoryDataset):
 
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
-        compute_gc_bias(contig_fasta)
+        compute_contig_features(contig_fasta)
 
     def __repr__(self):
         return '{}()'.format(self.name)
