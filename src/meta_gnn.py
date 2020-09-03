@@ -115,8 +115,6 @@ def compute_contig_features(file_name):
             gc_map[name] = compute_gc_bias(seq)
             tetra_freq_map[name] = compute_tetra_freq(seq)
             line = file.readline()
-    print(len(gc_map))
-    print(len(tetra_freq_map))
     return gc_map, tetra_freq_map
 
 class Metagenomic(InMemoryDataset):
@@ -292,11 +290,14 @@ class Metagenomic(InMemoryDataset):
                 taxon_rank_map[external_id] = rank
                 line = file.readline()
 
+        gc_map, tetra_freq_map = compute_contig_features(contig_fasta)
 ## Construct the feature vector from kraken2 output 
 #-------------------------------
         data_list = []
         node_features = []
         node_taxon = []
+        node_gc = []
+        node_tetra_freq = []
         species_nodes = []
         other_nodes = []
         max_len = 0
@@ -306,6 +307,7 @@ class Metagenomic(InMemoryDataset):
             line = file.readline()
             while line != "":
                 strings = line.split("\t")
+                name = strings[1]
                 node_id = strings[1].split("_")[1]
                 taxon_id = int(strings[2])
 
@@ -316,6 +318,16 @@ class Metagenomic(InMemoryDataset):
                     empty = [0] * len(taxon_vector_map[1])
                     node_features.append(empty) 
                     node_taxon.append(0)
+
+                if name in gc_map:
+                    node_gc.append(gc_map[name])
+                else:
+                    node_gc.append(0)
+
+                if name in tetra_freq_map:
+                    node_tetra_freq.append(tetra_freq_map[name])
+                else:
+                    node_tetra_freq.append(empty)
 
                 if taxon_rank_map[taxon_id] in ['species', 'no rank']:
                     species_nodes.append(idx)
@@ -329,6 +341,8 @@ class Metagenomic(InMemoryDataset):
         x = torch.tensor(node_features, dtype=torch.float)
         y = torch.tensor(node_taxon, dtype=torch.float)
         n = torch.tensor(list(range(0, node_count)), dtype=torch.int)
+        g = torch.tensor(node_gc, dtype=torch.float)
+        t = torch.tensor(node_tetra_freq, dtype=torch.float)
         edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
 
         node_idxs = list(range(1, node_count))
@@ -339,7 +353,7 @@ class Metagenomic(InMemoryDataset):
         val_mask = index_to_mask(node_idxs[train_size:train_size+val_size], size=node_count)
         test_mask = index_to_mask(node_idxs[train_size+val_size:], size=node_count)
 
-        data = Data(x=x, edge_index=edge_index, y=y, n=n)
+        data = Data(x=x, edge_index=edge_index, y=y, n=n, g=g, t=t)
         data.train_mask = train_mask
         data.val_mask = val_mask
         data.test_mask = test_mask
@@ -347,7 +361,6 @@ class Metagenomic(InMemoryDataset):
 
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
-        compute_contig_features(contig_fasta)
 
     def __repr__(self):
         return '{}()'.format(self.name)
