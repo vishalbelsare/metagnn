@@ -11,6 +11,7 @@ import re
 import logging
 import os.path as osp
 
+import pickle
 import torch
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
@@ -116,6 +117,27 @@ def compute_contig_features(file_name):
             tetra_freq_map[name] = compute_tetra_freq(seq)
             line = file.readline()
     return gc_map, tetra_freq_map
+
+def read_features(gc_bias_f, tf_f):
+    gc_map = pickle.load(open(gc_bias_f, 'rb'))
+    tetra_freq_map = pickle.load(open(tf_f, 'rb'))
+    return gc_map, tetra_freq_map
+
+def write_features(file_name, gc_map, tetra_freq_map):
+    gc_bias_f = file_name + '.gc'
+    tf_f = file_name + '.tf'
+    pickle.dump(gc_map, open(gc_bias_f, 'wb'))
+    pickle.dump(tetra_freq_map, open(tf_f, 'wb'))
+    
+def read_or_compute_features(file_name):
+    gc_bias_f = file_name + '.gc'
+    tf_f = file_name + '.tf'
+    if not os.path.exists(gc_bias_f) and not os.path.exists(tf_f):
+        gc_bias, tf = compute_contig_features(file_name)
+        write_features(file_name, gc_bias, tf)
+    else:
+        gc_bias, tf = read_features(gc_bias_f, tf_f)
+    return gc_bias, tf
 
 class Metagenomic(InMemoryDataset):
     r""" Assembly graph built over raw metagenomic data using spades.
@@ -290,7 +312,7 @@ class Metagenomic(InMemoryDataset):
                 taxon_rank_map[external_id] = rank
                 line = file.readline()
 
-        gc_map, tetra_freq_map = compute_contig_features(contig_fasta)
+        gc_map, tetra_freq_map = read_or_compute_features(contig_fasta)
 ## Construct the feature vector from kraken2 output 
 #-------------------------------
         data_list = []
@@ -298,9 +320,7 @@ class Metagenomic(InMemoryDataset):
         node_taxon = []
         node_gc = []
         node_tetra_freq = []
-        species_nodes = []
-        other_nodes = []
-        max_len = 0
+        node_idxs = []
         idx = 0
         # Get tax labels from kraken2 output 
         with open(taxa_file) as file:
@@ -314,6 +334,7 @@ class Metagenomic(InMemoryDataset):
                 if taxon_id in taxon_vector_map:
                     node_features.append(taxon_vector_map[taxon_id]) 
                     node_taxon.append(external_taxon_map[taxon_id])
+                    node_idxs.append(idx)
                 else:
                     empty = [0] * len(taxon_vector_map[1])
                     node_features.append(empty) 
@@ -328,14 +349,7 @@ class Metagenomic(InMemoryDataset):
                     node_tetra_freq.append(tetra_freq_map[name])
                 else:
                     node_tetra_freq.append(empty)
-
-                if taxon_rank_map[taxon_id] in ['species', 'no rank']:
-                    species_nodes.append(idx)
-                else:
-                    other_nodes.append(idx)
-		#increment the node idx
                 idx += 1
-
                 line = file.readline()
 
         x = torch.tensor(node_features, dtype=torch.float)
@@ -345,9 +359,7 @@ class Metagenomic(InMemoryDataset):
         t = torch.tensor(node_tetra_freq, dtype=torch.float)
         edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
 
-        node_idxs = list(range(1, node_count))
-        random.shuffle(node_idxs)
-        train_size = int(node_count/3)
+        train_size = int(len(node_idxs)/3)
         val_size = train_size
         train_mask = index_to_mask(node_idxs[:train_size], size=node_count)
         val_mask = index_to_mask(node_idxs[train_size:train_size+val_size], size=node_count)
