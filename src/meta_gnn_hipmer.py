@@ -285,6 +285,10 @@ class Metagenomic(InMemoryDataset):
                     empty = [0] * len(taxon_vector_map[1])
                     node_features.append(empty) 
                     node_taxon.append(0)
+                    
+                if taxon_id in taxon_rank_map:
+                    if taxon_rank_map[taxon_id] == 'species':
+                        print(str(taxon_id))
 
                 if name in gc_map:
                     node_gc.append(gc_map[name])

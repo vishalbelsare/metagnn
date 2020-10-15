@@ -11,6 +11,7 @@ import re
 import logging
 import os.path as osp
 
+import numpy as np
 import pickle
 import torch
 import torch.nn.functional as F
@@ -170,7 +171,7 @@ class Metagenomic(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        return ['assembly_graph_with_scaffolds.gfa', 'contigs.paths', 'contigs.fasta', 'kraken2.out', 'taxa.encoding']
+        return ['assembly_graph_with_scaffolds.gfa', 'contigs.paths', 'contigs.fasta', 'kraken2_5.out', 'taxa.encoding']
 
     @property
     def processed_file_names(self):
@@ -292,9 +293,21 @@ class Metagenomic(InMemoryDataset):
 
         # Add edges to the graph
         assembly_graph.add_edges(edge_list)
-        assembly_graph.simplify(multiple=True, loops=False, combine_edges=None)
-        clusters = assembly_graph.clusters()
-        print("Clusters: " + str(len(clusters)))
+        # assembly_graph.simplify(multiple=True, loops=False, combine_edges=None)
+        # for e in assembly_graph.get_edgelist():
+            # source_nodes.append(e[0])
+            # dest_nodes.append(e[1])
+        # print("Edges: " + str(assembly_graph.ecount()))
+        # print(assembly_graph.get_edgelist())
+        # clusters = assembly_graph.clusters()
+        # sizes = []
+        # for i in range(len(clusters)):
+            # sizes.append(clusters.subgraph(i).ecount())
+        # data = np.array(sizes)
+        # hist, bins=np.histogram(data, 500)
+        # print(hist)
+        # print(bins)
+        # print("Clusters: " + str(len(clusters)))
 
 ## Construct taxa encoding 
 #-------------------------------
@@ -321,6 +334,7 @@ class Metagenomic(InMemoryDataset):
         node_gc = []
         node_tetra_freq = []
         node_idxs = []
+        node_species = []
         idx = 0
         # Get tax labels from kraken2 output 
         with open(taxa_file) as file:
@@ -333,12 +347,21 @@ class Metagenomic(InMemoryDataset):
 
                 if taxon_id in taxon_vector_map:
                     node_features.append(taxon_vector_map[taxon_id]) 
-                    node_taxon.append(external_taxon_map[taxon_id])
                     node_idxs.append(idx)
+                    if taxon_id in taxon_rank_map:
+                        if taxon_rank_map[taxon_id] == 'species':
+                            node_taxon.append(external_taxon_map[taxon_id])
+                            node_species.append(idx)
+                        else:
+                            node_taxon.append(0)
                 else:
                     empty = [0] * len(taxon_vector_map[1])
                     node_features.append(empty) 
                     node_taxon.append(0)
+
+                # if taxon_id in taxon_rank_map:
+                    # if taxon_rank_map[taxon_id] == 'species':
+                        # node_species.append(idx)
 
                 if name in gc_map:
                     node_gc.append(gc_map[name])
@@ -355,17 +378,41 @@ class Metagenomic(InMemoryDataset):
         x = torch.tensor(node_features, dtype=torch.float)
         y = torch.tensor(node_taxon, dtype=torch.float)
         n = torch.tensor(list(range(0, node_count)), dtype=torch.int)
-        g = torch.tensor(node_gc, dtype=torch.float)
-        t = torch.tensor(node_tetra_freq, dtype=torch.float)
+        # g = torch.tensor(node_gc, dtype=torch.float)
+        # t = torch.tensor(node_tetra_freq, dtype=torch.float)
         edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
 
-        train_size = int(len(node_idxs)/3)
-        val_size = train_size
-        train_mask = index_to_mask(node_idxs[:train_size], size=node_count)
-        val_mask = index_to_mask(node_idxs[train_size:train_size+val_size], size=node_count)
-        test_mask = index_to_mask(node_idxs[train_size+val_size:], size=node_count)
+        species_id_map = BidirectionalMap()
+        uniq_species = set(node_taxon)
+        idx = 0
+        for taxon in uniq_species:
+            species_id_map[taxon] = idx
+            idx += 1
+        
+        for i in range(len(node_taxon)):
+            node_taxon[i] = species_id_map[node_taxon[i]]
 
-        data = Data(x=x, edge_index=edge_index, y=y, n=n, g=g, t=t)
+        # print(node_taxon)
+        # print(set(node_taxon))
+        node_list = source_nodes + dest_nodes
+        node_list = set(node_list)
+
+        # not_class_but_conn_nodes = 0
+        # for i in range(len(node_taxon)):
+            # if node_taxon[i] != 0:
+                # if i in node_list:
+                    # not_class_but_conn_nodes += 1
+
+        # print(not_class_but_conn_nodes)
+
+        train_size = int(len(node_species)/2)
+        # val_size = train_size
+        train_mask = index_to_mask(node_species[:train_size], size=node_count)
+        val_mask = index_to_mask(node_species[train_size:], size=node_count)
+        test_mask = index_to_mask(node_species, size=node_count)
+
+        # data = Data(x=x, edge_index=edge_index, y=y, n=n, g=g, t=t)
+        data = Data(x=x, edge_index=edge_index, y=y, n=n)
         data.train_mask = train_mask
         data.val_mask = val_mask
         data.test_mask = test_mask
@@ -497,12 +544,20 @@ logger.info("Graph construction done!")
 elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 
-cluster_data = ClusterData(data, num_parts=1000, recursive=False,
+cluster_data = ClusterData(data, num_parts=100, recursive=False,
         save_dir=dataset.processed_dir)
 
-loader = ClusterLoader(cluster_data, batch_size=20, shuffle=False,
+loader = ClusterLoader(cluster_data, batch_size=5, shuffle=False,
         num_workers=5)
 
+# for i in range(len(cluster_data)):
+    # if i == 4:
+        # print(cluster_data[i])
+        # # print(cluster_data[i].edge_index)
+        # print(cluster_data[i].x[1])
+        # print(cluster_data[i].n[1])
+
+exit()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logger.info("Running GNN on: "+str(device))
 model = Net().to(device)
