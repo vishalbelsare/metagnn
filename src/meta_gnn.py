@@ -396,15 +396,7 @@ class Metagenomic(InMemoryDataset):
         # print(set(node_taxon))
         node_list = source_nodes + dest_nodes
         node_list = set(node_list)
-
-        # not_class_but_conn_nodes = 0
-        # for i in range(len(node_taxon)):
-            # if node_taxon[i] != 0:
-                # if i in node_list:
-                    # not_class_but_conn_nodes += 1
-
-        # print(not_class_but_conn_nodes)
-
+	
         train_size = int(len(node_species)/2)
         # val_size = train_size
         train_mask = index_to_mask(node_species[:train_size], size=node_count)
