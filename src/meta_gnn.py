@@ -171,7 +171,7 @@ class Metagenomic(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        return ['assembly_graph_with_scaffolds.gfa', 'contigs.paths', 'contigs.fasta', 'kraken2_5.out', 'taxa.encoding']
+        return ['assembly_graph_with_scaffolds.gfa', 'contigs.paths', 'contigs.fasta', 'taxa_assign.out', 'taxa.encoding']
 
     @property
     def processed_file_names(self):
@@ -287,27 +287,31 @@ class Metagenomic(InMemoryDataset):
                     for contig in segment_contigs[new_link]:
                         if i!=int(contig):
                             # Add edge to list of edges
-                            source_nodes.append(i);
-                            dest_nodes.append(contigs_map_rev[int(contig)]);
+                            # source_nodes.append(i);
+                            # dest_nodes.append(contigs_map_rev[int(contig)]);
                             edge_list.append((i,contigs_map_rev[int(contig)]))
 
         # Add edges to the graph
         assembly_graph.add_edges(edge_list)
-        # assembly_graph.simplify(multiple=True, loops=False, combine_edges=None)
-        # for e in assembly_graph.get_edgelist():
-            # source_nodes.append(e[0])
-            # dest_nodes.append(e[1])
+        assembly_graph.simplify(multiple=True, loops=False, combine_edges=None)
+        for e in assembly_graph.get_edgelist():
+            source_nodes.append(e[0])
+            dest_nodes.append(e[1])
+        # print(len(source_nodes))
+        # print(len(dest_nodes))
         # print("Edges: " + str(assembly_graph.ecount()))
         # print(assembly_graph.get_edgelist())
-        # clusters = assembly_graph.clusters()
+        clusters = assembly_graph.clusters()
+        print("Clusters: " + str(len(clusters)))
         # sizes = []
         # for i in range(len(clusters)):
-            # sizes.append(clusters.subgraph(i).ecount())
+            # if clusters.subgraph(i).ecount() > 500:
+                # print(str(clusters.subgraph(i).ecount()) + " " +
+                        # str(clusters.subgraph(i).density()))
         # data = np.array(sizes)
         # hist, bins=np.histogram(data, 500)
         # print(hist)
         # print(bins)
-        # print("Clusters: " + str(len(clusters)))
 
 ## Construct taxa encoding 
 #-------------------------------
@@ -326,64 +330,44 @@ class Metagenomic(InMemoryDataset):
                 line = file.readline()
 
         gc_map, tetra_freq_map = read_or_compute_features(contig_fasta)
-## Construct the feature vector from kraken2 output 
+
+## Construct feature vector from Taxa Assign output
 #-------------------------------
         data_list = []
         node_features = []
-        node_taxon = []
+        node_taxon = [0] * node_count
         node_gc = []
         node_tetra_freq = []
         node_idxs = []
         node_species = []
         idx = 0
-        # Get tax labels from kraken2 output 
+        rev_name_map = name_map.inverse
         with open(taxa_file) as file:
             line = file.readline()
             while line != "":
                 strings = line.split("\t")
-                name = strings[1]
-                node_id = strings[1].split("_")[1]
-                taxon_id = int(strings[2])
-
+                name = strings[0]
+                node_id = strings[0].split("_")[1]
+                if (strings[1] != '__Unclassified__'):
+                    taxon_id = int(strings[2])
+                else:
+                    taxon_id = 0
+                name_node_id = rev_name_map[name]
                 if taxon_id in taxon_vector_map:
                     node_features.append(taxon_vector_map[taxon_id]) 
                     node_idxs.append(idx)
-                    if taxon_id in taxon_rank_map:
-                        if taxon_rank_map[taxon_id] == 'species':
-                            node_taxon.append(external_taxon_map[taxon_id])
-                            node_species.append(idx)
-                        else:
-                            node_taxon.append(0)
+                    node_taxon[name_node_id] = external_taxon_map[taxon_id]
+                    node_species.append(idx)
                 else:
                     empty = [0] * len(taxon_vector_map[1])
                     node_features.append(empty) 
-                    node_taxon.append(0)
-
-                # if taxon_id in taxon_rank_map:
-                    # if taxon_rank_map[taxon_id] == 'species':
-                        # node_species.append(idx)
-
-                if name in gc_map:
-                    node_gc.append(gc_map[name])
-                else:
-                    node_gc.append(0)
-
-                if name in tetra_freq_map:
-                    node_tetra_freq.append(tetra_freq_map[name])
-                else:
-                    node_tetra_freq.append(empty)
                 idx += 1
                 line = file.readline()
 
-        x = torch.tensor(node_features, dtype=torch.float)
-        y = torch.tensor(node_taxon, dtype=torch.float)
-        n = torch.tensor(list(range(0, node_count)), dtype=torch.int)
-        # g = torch.tensor(node_gc, dtype=torch.float)
-        # t = torch.tensor(node_tetra_freq, dtype=torch.float)
-        edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
-
+        print(len(node_species))
         species_id_map = BidirectionalMap()
         uniq_species = set(node_taxon)
+        print(uniq_species)
         idx = 0
         for taxon in uniq_species:
             species_id_map[taxon] = idx
@@ -392,11 +376,18 @@ class Metagenomic(InMemoryDataset):
         for i in range(len(node_taxon)):
             node_taxon[i] = species_id_map[node_taxon[i]]
 
+        x = torch.tensor(node_features, dtype=torch.float)
+        y = torch.tensor(node_taxon, dtype=torch.float)
+        n = torch.tensor(list(range(0, node_count)), dtype=torch.int)
+        # g = torch.tensor(node_gc, dtype=torch.float)
+        # t = torch.tensor(node_tetra_freq, dtype=torch.float)
+        edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
+
         # print(node_taxon)
         # print(set(node_taxon))
         node_list = source_nodes + dest_nodes
         node_list = set(node_list)
-	
+  
         train_size = int(len(node_species)/2)
         # val_size = train_size
         train_mask = index_to_mask(node_species[:train_size], size=node_count)
@@ -412,6 +403,59 @@ class Metagenomic(InMemoryDataset):
 
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
+
+        plt_g = Graph()
+        for i in range(len(clusters)):
+            if clusters.subgraph(i).ecount() > 100 and clusters.subgraph(i).ecount() < 500:
+                plt_g = clusters.subgraph(i)
+                break
+        color_pal = []
+        ext_taxon_map_rev = external_taxon_map.inverse
+        for v in plt_g.vs:
+            i = v["id"]
+            t = ext_taxon_map_rev[node_taxon[i]]
+            color_pal.append(t)
+            print(str(i) + " " + str(t))
+
+        # print(color_pal)
+        # for i, c in zip(node_ids, color_pal):
+            # print(str(i) + " " + str(c))
+        color_map = BidirectionalMap()
+        uniq_color_pal = set(color_pal)
+        idx = 0
+        for c in uniq_color_pal:
+            color_map[c] = idx
+            idx += 1
+        for i in range(len(color_pal)):
+            color_pal[i] = color_map[color_pal[i]]
+        # print(color_pal)
+        palette = ClusterColoringPalette(len(uniq_color_pal))
+        color_pal = [palette[index] for index in color_pal]
+        # print(color_pal)
+
+        plt_g.vs["color"] = color_pal
+        for i in range(len(plt_g.vs)):
+            if node_taxon[plt_g.vs[i]["id"]] == 0:
+                plt_g.vs[i]["color"] = "white"
+        
+        out_fig_name = "assembly_graph.png"
+        visual_style = {}
+        # Set bbox and margin
+        visual_style["bbox"] = (3200,1800)
+        visual_style["margin"] = 30
+        # Set vertex colours
+        # visual_style["vertex_color"] = 'white'
+        # Set vertex size
+        visual_style["vertex_size"] = 70
+        # Set vertex lable size
+        visual_style["vertex_label_size"] = 30
+        # Don't curve the edges
+        visual_style["edge_curved"] = False
+        # Set the layout
+        my_layout = plt_g.layout_fruchterman_reingold()
+        visual_style["layout"] = my_layout
+        # Plot the graph
+        plot(plt_g, out_fig_name, **visual_style)
 
     def __repr__(self):
         return '{}()'.format(self.name)
@@ -536,6 +580,7 @@ logger.info("Graph construction done!")
 elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 
+exit()
 cluster_data = ClusterData(data, num_parts=100, recursive=False,
         save_dir=dataset.processed_dir)
 
@@ -549,7 +594,6 @@ loader = ClusterLoader(cluster_data, batch_size=5, shuffle=False,
         # print(cluster_data[i].x[1])
         # print(cluster_data[i].n[1])
 
-exit()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logger.info("Running GNN on: "+str(device))
 model = Net().to(device)
@@ -576,3 +620,56 @@ logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 
 #Print GCN model output
 output(output_dir)
+
+
+"""
+## Construct the feature vector from kraken2 output 
+#-------------------------------
+        data_list = []
+        node_features = []
+        node_taxon = []
+        node_gc = []
+        node_tetra_freq = []
+        node_idxs = []
+        node_species = []
+        idx = 0
+        # Get tax labels from kraken2 output 
+        with open(taxa_file) as file:
+            line = file.readline()
+            while line != "":
+                strings = line.split("\t")
+                name = strings[1]
+                node_id = strings[1].split("_")[1]
+                taxon_id = int(strings[2])
+
+                if taxon_id in taxon_vector_map:
+                    node_features.append(taxon_vector_map[taxon_id]) 
+                    node_idxs.append(idx)
+                    if taxon_id in taxon_rank_map:
+                        if taxon_rank_map[taxon_id] == 'species':
+                            node_taxon.append(external_taxon_map[taxon_id])
+                            node_species.append(idx)
+                        else:
+                            node_taxon.append(0)
+                else:
+                    empty = [0] * len(taxon_vector_map[1])
+                    node_features.append(empty) 
+                    node_taxon.append(0)
+
+                # if taxon_id in taxon_rank_map:
+                    # if taxon_rank_map[taxon_id] == 'species':
+                        # node_species.append(idx)
+
+                if name in gc_map:
+                    node_gc.append(gc_map[name])
+                else:
+                    node_gc.append(0)
+
+                if name in tetra_freq_map:
+                    node_tetra_freq.append(tetra_freq_map[name])
+                else:
+                    node_tetra_freq.append(empty)
+                idx += 1
+                line = file.readline()
+"""
+

@@ -12,12 +12,12 @@ import logging
 import os.path as osp
 
 import numpy as np
-import matplotlib.pyplot as plt
 import pickle
 import torch
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
 
+from Bio import SeqIO
 from igraph import *
 from collections import defaultdict
 from bidirectionalmap.bidirectionalmap import BidirectionalMap
@@ -38,40 +38,11 @@ def resize(l, newsize, filling=None):
     else:
         del l[newsize:]
 
-name_map = BidirectionalMap()
-external_taxon_map = BidirectionalMap()
-
-def populate_name_map(file_name):
-    node_count = 0
-    current_contig_num = ""
-    # header line
-    with open(file_name) as file:
-        line = file.readline()
-        while line != "":
-            strings = line.split("\t")
-            name = strings[0]
-            name = name.rstrip('\n')
-            name_map[node_count] = name;
-            node_count += 1
-            line = file.readline()
-
-def populate_external_map(file_name):
-    external_taxon_map[0] = 0
-    with open(file_name) as file:
-        line = file.readline()
-        while line != "":
-            strings = line.split("\t")
-            taxon_id = int(strings[0])
-            external_id = int(strings[1])
-            external_taxon_map[external_id] = taxon_id
-            line = file.readline()
-
 def peek_line(f):
     pos = f.tell()
     line = f.readline()
     f.seek(pos)
     return line
-
 
 tetra_list = []
 def compute_tetra_list():
@@ -100,9 +71,8 @@ def compute_contig_features(file_name):
     with open(file_name) as file:
         line = file.readline()
         while '>' in line:
-            name = line.split(" ")[0]
+            name = line.lstrip('>')
             name = name.rstrip('\n')
-            name = name.lstrip('>')
             seq_line = peek_line(file)
             seq = ''
             while seq_line != "" and '>' not in seq_line:
@@ -167,7 +137,7 @@ class Metagenomic(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        return ['final_assembly.gfa', 'final_assembly.fasta', 'taxa.encoding']
+        return ['6species_with_readnames.graphmlz', 'shuffled_reads.fastq.gz']
 
     @property
     def processed_file_names(self):
@@ -177,169 +147,29 @@ class Metagenomic(InMemoryDataset):
         pass
 
     def process(self):
-        assembly_graph_file = osp.join(self.raw_dir, self.raw_file_names[0])
-        contig_fasta = osp.join(self.raw_dir, self.raw_file_names[1])
-        taxa_encoding = osp.join(self.raw_dir, self.raw_file_names[2])
-        
-        logger.info("Constructing the assembly graph")
-        node_count = len(name_map)
-        nodes = []
-        links = []
-        # Get contig connections from .gfa file
-        with open(assembly_graph_file) as file:
-            line = file.readline()
-            while line != "":
-                # Identify lines with link information
-                if "E" in line:
-                    link = []
-                    strings = line.split("\t")
-                    if strings[2] != strings[3]:
-                        start = strings[2][:-1]
-                        end = strings[3][:-1]
-                        link.append(start)
-                        link.append(end)
-                        links.append(link)
-                line = file.readline()
+        overlap_graph_file = osp.join(self.raw_dir, self.raw_file_names[0])
+        read_file = osp.join(self.raw_dir, self.raw_file_names[1])
+        # Read assembly graph and node features from the file into arrays
 
-        contigs_map = name_map
-        contigs_map_rev = contigs_map.inverse
-        logger.info("Total number of contigs available: "+str(node_count))
+        overlap_graph = Graph()
+        overlap_graph = overlap_graph.Read_GraphMLz(overlap_graph_file)
 
         source_nodes = []
         dest_nodes = []
-        ## Construct the assembly graph
-        #-------------------------------
-        # Create the graph
-        assembly_graph = Graph()
-        # Create list of edges
-        edge_list = []
-        # Add vertices
-        assembly_graph.add_vertices(node_count)
-        # Name vertices
-        for i in range(len(assembly_graph.vs)):
-            assembly_graph.vs[i]["id"]= i
-            assembly_graph.vs[i]["label"]= str(contigs_map[i])
-        # Iterate links
-        for link in links:
-            # Remove self loops
-            if link[0] != link[1]:
-                # Add edge to list of edges
-                src = contigs_map_rev["Contig" + link[0]]
-                dest = contigs_map_rev["Contig" + link[1]]
-                # print(str(src) + " " + str(dest))
-                # source_nodes.append(src)
-                # dest_nodes.append(dest)
-                edge_list.append((src, dest))
-                    
         # Add edges to the graph
-        assembly_graph.add_edges(edge_list)
-        assembly_graph.simplify(multiple=True, loops=False, combine_edges=None)
-        for e in assembly_graph.get_edgelist():
+        overlap_graph.simplify(multiple=True, loops=True, combine_edges=None)
+        for e in overlap_graph.get_edgelist():
             source_nodes.append(e[0])
             dest_nodes.append(e[1])
-                   
-        logger.info("Total number of edges in the assembly graph: "+str(len(edge_list)))
-
-        # Add edges to the graph
-        clusters = assembly_graph.clusters()
+        print("Edges: " + str(overlap_graph.ecount()))
+        clusters = overlap_graph.clusters()
         print("Clusters: " + str(len(clusters)))
-        sizes = []
-        for i in range(len(clusters)):
-            sizes.append(clusters.subgraph(i).ecount())
-            # if clusters.subgraph(i).ecount() > 1:
-                # print(str(clusters.subgraph(i).ecount()) + " " +
-                        # str(clusters.subgraph(i).density()))
-        data = np.array(sizes)
-        # plt.hist(data, bins='auto')
-        # plt.show()
-        # hist, bins=np.histogram(data, 500)
-        # print(hist)
-        # print(bins)
-
-## Construct taxa encoding 
-#-------------------------------
-        taxon_vector_map = defaultdict(set)
-        taxon_rank_map = defaultdict(str)
-        with open(taxa_encoding) as file:
-            line = file.readline()
-            while line != "":
-                strings = line.split("\t")
-                taxon_id = int(strings[0])
-                external_id = int(strings[1])
-                rank = strings[2]
-                hashes = strings[3].split(" ")[:-1]
-                taxon_vector_map[external_id] = list(map(int, hashes))
-                taxon_rank_map[external_id] = rank
-                line = file.readline()
-
-        gc_map, tetra_freq_map = read_or_compute_features(contig_fasta)
-## Construct the feature vector from kraken2 output 
-#-------------------------------
-        data_list = []
-        node_features = []
-        node_taxon = []
-        node_gc = []
-        node_tetra_freq = []
-        node_idxs = []
-        idx = 0
-        # Get tax labels from kraken2 output 
-        with open(taxa_file) as file:
-            line = file.readline()
-            while line != "":
-                strings = line.split("\t")
-                name = strings[1]
-                name = name.rstrip('\n')
-                node_id = name.lstrip('>contig')
-                taxon_id = int(strings[2])
-
-                if taxon_id in taxon_vector_map:
-                    node_features.append(taxon_vector_map[taxon_id]) 
-                    node_taxon.append(external_taxon_map[taxon_id])
-                    node_idxs.append(idx)
-                else:
-                    empty = [0] * len(taxon_vector_map[1])
-                    node_features.append(empty) 
-                    node_taxon.append(0)
-                    
-                if taxon_id in taxon_rank_map:
-                    if taxon_rank_map[taxon_id] == 'species':
-                        print(str(taxon_id))
-
-                if name in gc_map:
-                    node_gc.append(gc_map[name])
-                else:
-                    node_gc.append(0)
-
-                if name in tetra_freq_map:
-                    node_tetra_freq.append(tetra_freq_map[name])
-                else:
-                    print(name)
-                    node_tetra_freq.append(empty)
-                idx += 1
-                line = file.readline()
-
-        x = torch.tensor(node_features, dtype=torch.float)
-        y = torch.tensor(node_taxon, dtype=torch.float)
-        n = torch.tensor(list(range(0, node_count)), dtype=torch.int)
-        g = torch.tensor(node_gc, dtype=torch.float)
-        t = torch.tensor(node_tetra_freq, dtype=torch.float)
-        edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
-
-        train_size = int(len(node_idxs)/3)
-        val_size = train_size
-        train_mask = index_to_mask(node_idxs[:train_size], size=node_count)
-        val_mask = index_to_mask(node_idxs[train_size:train_size+val_size], size=node_count)
-        test_mask = index_to_mask(node_idxs[train_size+val_size:], size=node_count)
-
-        data = Data(x=x, edge_index=edge_index, y=y, n=n, g=g, t=t)
-        data.train_mask = train_mask
-        data.val_mask = val_mask
-        data.test_mask = test_mask
-        data_list.append(data)
-
-        data, slices = self.collate(data_list)
-        torch.save((data, slices), self.processed_paths[0])
-
+        # vertexes = overlap_graph.vs 
+        # for v in vertexes:
+            # print(v)
+        for record in SeqIO.parse(read_file, 'fastq')
+            print(record)
+        
     def __repr__(self):
         return '{}()'.format(self.name)
 
@@ -453,8 +283,6 @@ logger.info("MetaGNN started")
 
 logger.info("Constructing the assembly graph and node feature vectors")
 
-populate_name_map(osp.join(input_dir, data_name, 'raw', 'final_assembly_depths.txt'))
-populate_external_map(osp.join(input_dir, data_name, 'raw', 'taxa.encoding'))
 dataset = Metagenomic(root=input_dir, name=data_name)
 data = dataset[0]
 print(data)
@@ -464,11 +292,18 @@ elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 
 exit()
-cluster_data = ClusterData(data, num_parts=1000, recursive=False,
+cluster_data = ClusterData(data, num_parts=100, recursive=False,
         save_dir=dataset.processed_dir)
 
-loader = ClusterLoader(cluster_data, batch_size=20, shuffle=False,
+loader = ClusterLoader(cluster_data, batch_size=5, shuffle=False,
         num_workers=5)
+
+# for i in range(len(cluster_data)):
+    # if i == 4:
+        # print(cluster_data[i])
+        # # print(cluster_data[i].edge_index)
+        # print(cluster_data[i].x[1])
+        # print(cluster_data[i].n[1])
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logger.info("Running GNN on: "+str(device))
@@ -496,3 +331,4 @@ logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 
 #Print GCN model output
 output(output_dir)
+
