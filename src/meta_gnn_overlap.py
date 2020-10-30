@@ -64,25 +64,14 @@ def compute_gc_bias(seq):
     gc_frac = gc_cnt/len(seq)
     return gc_frac
 
-def compute_contig_features(file_name):
+def compute_contig_features(file_name, read_names):
     compute_tetra_list()
     gc_map = defaultdict(float) 
     tetra_freq_map = defaultdict(list)
-    with open(file_name) as file:
-        line = file.readline()
-        while '>' in line:
-            name = line.lstrip('>')
-            name = name.rstrip('\n')
-            seq_line = peek_line(file)
-            seq = ''
-            while seq_line != "" and '>' not in seq_line:
-                seq_line = file.readline()
-                seq_line.rstrip('\n')
-                seq = seq + seq_line
-                seq_line = peek_line(file)
-            gc_map[name] = compute_gc_bias(seq)
-            tetra_freq_map[name] = compute_tetra_freq(seq)
-            line = file.readline()
+    for record in SeqIO.parse(read_file, 'fastq'):
+        if record.name in read_names:
+            gc_map[record.name] = compute_gc_bias(record.seq)
+            tetra_freq_map[record.name] = compute_tetra_freq(record.seq)
     return gc_map, tetra_freq_map
 
 def read_features(gc_bias_f, tf_f):
@@ -96,11 +85,11 @@ def write_features(file_name, gc_map, tetra_freq_map):
     pickle.dump(gc_map, open(gc_bias_f, 'wb'))
     pickle.dump(tetra_freq_map, open(tf_f, 'wb'))
     
-def read_or_compute_features(file_name):
+def read_or_compute_features(file_name, read_names):
     gc_bias_f = file_name + '.gc'
     tf_f = file_name + '.tf'
     if not os.path.exists(gc_bias_f) and not os.path.exists(tf_f):
-        gc_bias, tf = compute_contig_features(file_name)
+        gc_bias, tf = compute_contig_features(file_name, read_names)
         write_features(file_name, gc_bias, tf)
     else:
         gc_bias, tf = read_features(gc_bias_f, tf_f)
@@ -137,7 +126,7 @@ class Metagenomic(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        return ['6species_with_readnames.graphmlz', 'shuffled_reads.fastq.gz']
+        return ['6species_with_readnames.graphmlz', 'shuffled_reads.fastq']
 
     @property
     def processed_file_names(self):
@@ -164,12 +153,12 @@ class Metagenomic(InMemoryDataset):
         print("Edges: " + str(overlap_graph.ecount()))
         clusters = overlap_graph.clusters()
         print("Clusters: " + str(len(clusters)))
-        # vertexes = overlap_graph.vs 
-        # for v in vertexes:
-            # print(v)
-        for record in SeqIO.parse(read_file, 'fastq')
-            print(record)
-        
+        vertex_names = []
+        vertexes = overlap_graph.vs
+        for v in overlap_graph.vs:
+            vertex_names.append(v.readname)
+        read_or_compute_features(read_file, vertex_names)
+
     def __repr__(self):
         return '{}()'.format(self.name)
 
