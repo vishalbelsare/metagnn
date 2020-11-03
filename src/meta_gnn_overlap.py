@@ -64,14 +64,17 @@ def compute_gc_bias(seq):
     gc_frac = gc_cnt/len(seq)
     return gc_frac
 
-def compute_contig_features(file_name, read_names):
+def compute_contig_features(read_file, read_names):
     compute_tetra_list()
     gc_map = defaultdict(float) 
     tetra_freq_map = defaultdict(list)
+    idx = 0
     for record in SeqIO.parse(read_file, 'fastq'):
         if record.name in read_names:
             gc_map[record.name] = compute_gc_bias(record.seq)
             tetra_freq_map[record.name] = compute_tetra_freq(record.seq)
+            print(idx)
+            idx += 1
     return gc_map, tetra_freq_map
 
 def read_features(gc_bias_f, tf_f):
@@ -147,17 +150,71 @@ class Metagenomic(InMemoryDataset):
         dest_nodes = []
         # Add edges to the graph
         overlap_graph.simplify(multiple=True, loops=True, combine_edges=None)
+
+        # prepare edge list
         for e in overlap_graph.get_edgelist():
             source_nodes.append(e[0])
             dest_nodes.append(e[1])
+
+        node_count = overlap_graph.vcount()
+        print("Nodes: " + str(overlap_graph.vcount()))
         print("Edges: " + str(overlap_graph.ecount()))
         clusters = overlap_graph.clusters()
         print("Clusters: " + str(len(clusters)))
+
+        # get all vertex names
+        species = []
         vertex_names = []
         vertexes = overlap_graph.vs
         for v in overlap_graph.vs:
-            vertex_names.append(v.readname)
-        read_or_compute_features(read_file, vertex_names)
+            vertex_names.append(v['readname'])
+            species.append(v['species'])
+        gc_map, tetra_freq_map = read_or_compute_features(read_file, vertex_names)
+
+        # prepare node features
+        node_gc = []
+        node_tfq = []
+        for v in overlap_graph.vs:
+            node_gc.append(gc_map[v['readname']])
+            node_tfq.append(tetra_freq_map[v['readname']])
+
+        # prepare vertex labels
+        node_labels = []
+        species_map = {}
+        species_set = set(species)
+        idx = 0
+        for s in species_set:
+            species_map[s] = idx
+            idx += 1
+        for v in overlap_graph.vs:
+            node_labels.append(species_map[v['species']])
+
+        # prepare torch objects
+        x = torch.tensor(node_tfq, dtype=torch.float)
+        g = torch.tensor(node_gc, dtype=torch.float)
+        y = torch.tensor(node_labels, dtype=torch.float)
+        n = torch.tensor(list(range(0, node_count)), dtype=torch.int)
+        edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
+
+        # prepare train/validate/test vectors
+        train_size = int(node_count/3)
+        val_size = train_size
+        train_index = torch.arange(train_size)
+        val_index = torch.arange(train_size, train_size+val_size)
+        test_index = torch.arange(train_size+val_size, node_count)
+        train_mask = index_to_mask(train_index, size=node_count)
+        val_mask = index_to_mask(val_index, size=node_count)
+        test_mask = index_to_mask(test_index, size=node_count)
+
+        data = Data(x=x, edge_index=edge_index, y=y, n=n, g=g)
+        data.train_mask = train_mask
+        data.val_mask = val_mask
+        data.test_mask = test_mask
+        data_list = []
+        data_list.append(data)
+
+        data, slices = self.collate(data_list)
+        torch.save((data, slices), self.processed_paths[0])
 
     def __repr__(self):
         return '{}()'.format(self.name)
@@ -193,7 +250,7 @@ def train():
     return total_loss / total_examples
 
 @torch.no_grad()
-def test(out):
+def test():
     model.eval()
     for data in loader:
         data = data.to(device)
@@ -209,16 +266,13 @@ def test(out):
 def output(output_dir):
     gnn_f = output_dir + "/gnn.out"
     gf = open(gnn_f, "w")
-    ext_taxon_map_rev = external_taxon_map.inverse
     for data in loader:
         data = data.to(device)
         _, preds = model(data).max(dim=1)
         pred_list = preds.tolist()
         perm = data.n.tolist()
         for idx,val in zip(perm,pred_list):
-            name = name_map[idx]
-            taxon = str(ext_taxon_map_rev[val])  
-            gf.write(name + '\t' + str(ext_taxon_map_rev[val]) + '\n')
+            gf.write(str(idx) + '\t' + str(val) + '\n')
     
     gf.close()
 
@@ -261,8 +315,8 @@ fileHandler.setLevel(logging.INFO)
 fileHandler.setFormatter(formatter)
 logger.addHandler(fileHandler)
 
-logger.info("Welcome to MetaGNN: Metagenomic Contigs classification using GNN.")
-logger.info("This version of MetaGNN makes use of the assembly graph produced by SPAdes which is based on the de Bruijn graph approach.")
+logger.info("Welcome to MetaGNN: Metagenomic reads classification using GNN.")
+logger.info("This version of MetaGNN makes use of the overlap graph produced by Minimap2.")
 
 logger.info("Input arguments:")
 logger.info("Input dir: "+input_dir)
@@ -270,7 +324,7 @@ logger.info("Dataset: "+data_name)
 
 logger.info("MetaGNN started")
 
-logger.info("Constructing the assembly graph and node feature vectors")
+logger.info("Constructing the overlap graph and node feature vectors")
 
 dataset = Metagenomic(root=input_dir, name=data_name)
 data = dataset[0]
@@ -280,19 +334,11 @@ logger.info("Graph construction done!")
 elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 
-exit()
-cluster_data = ClusterData(data, num_parts=100, recursive=False,
+cluster_data = ClusterData(data, num_parts=10000, recursive=False,
         save_dir=dataset.processed_dir)
 
 loader = ClusterLoader(cluster_data, batch_size=5, shuffle=False,
         num_workers=5)
-
-# for i in range(len(cluster_data)):
-    # if i == 4:
-        # print(cluster_data[i])
-        # # print(cluster_data[i].edge_index)
-        # print(cluster_data[i].x[1])
-        # print(cluster_data[i].n[1])
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logger.info("Running GNN on: "+str(device))
@@ -307,8 +353,7 @@ logger.info("Training model")
 best_val_acc = test_acc = 0
 for epoch in range(1, 20):
     train()
-    out = True if epoch == 19 else False
-    train_acc, val_acc, tmp_test_acc = test(out)
+    train_acc, val_acc, tmp_test_acc = test()
     if val_acc > best_val_acc:
         best_val_acc = val_acc
         test_acc = tmp_test_acc
@@ -319,5 +364,5 @@ elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 
 #Print GCN model output
-output(output_dir)
+# output(output_dir)
 
