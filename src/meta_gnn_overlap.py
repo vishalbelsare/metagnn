@@ -68,13 +68,10 @@ def compute_contig_features(read_file, read_names):
     compute_tetra_list()
     gc_map = defaultdict(float) 
     tetra_freq_map = defaultdict(list)
-    idx = 0
     for record in SeqIO.parse(read_file, 'fastq'):
         if record.name in read_names:
             gc_map[record.name] = compute_gc_bias(record.seq)
             tetra_freq_map[record.name] = compute_tetra_freq(record.seq)
-            print(idx)
-            idx += 1
     return gc_map, tetra_freq_map
 
 def read_features(gc_bias_f, tf_f):
@@ -334,11 +331,11 @@ logger.info("Graph construction done!")
 elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 
-cluster_data = ClusterData(data, num_parts=10000, recursive=False,
-        save_dir=dataset.processed_dir)
+#cluster_data = ClusterData(data, num_parts=100, recursive=False, save_dir=dataset.processed_dir)
 
-loader = ClusterLoader(cluster_data, batch_size=5, shuffle=False,
-        num_workers=5)
+#loader = ClusterLoader(cluster_data, batch_size=1, shuffle=False, num_workers=5)
+
+loader = DataLoader(dataset)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logger.info("Running GNN on: "+str(device))
