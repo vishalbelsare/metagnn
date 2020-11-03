@@ -27,6 +27,9 @@ from torch_geometric.data import DataLoader
 from torch_geometric.data import Data
 from torch_geometric.data import InMemoryDataset
 
+learned_graph = Graph()
+species_set = set()
+
 def index_to_mask(index, size):
     mask = torch.zeros((size, ), dtype=torch.bool)
     mask[index] = 1
@@ -126,7 +129,7 @@ class Metagenomic(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        return ['6species_with_readnames.graphmlz', 'shuffled_reads.fastq']
+        return ['6species_with_readnames.graphmlz', 'shuffled_reads.fastq', '6species_all.graphml', '6species_training.graphml']
 
     @property
     def processed_file_names(self):
@@ -138,6 +141,8 @@ class Metagenomic(InMemoryDataset):
     def process(self):
         overlap_graph_file = osp.join(self.raw_dir, self.raw_file_names[0])
         read_file = osp.join(self.raw_dir, self.raw_file_names[1])
+        all_file = osp.join(self.raw_dir, self.raw_file_names[2])
+        training_file = osp.join(self.raw_dir, self.raw_file_names[3])
         # Read assembly graph and node features from the file into arrays
 
         overlap_graph = Graph()
@@ -147,6 +152,7 @@ class Metagenomic(InMemoryDataset):
         dest_nodes = []
         # Add edges to the graph
         overlap_graph.simplify(multiple=True, loops=True, combine_edges=None)
+        overlap_graph.write_graphml(all_file)
 
         # prepare edge list
         for e in overlap_graph.get_edgelist():
@@ -190,7 +196,6 @@ class Metagenomic(InMemoryDataset):
         x = torch.tensor(node_tfq, dtype=torch.float)
         g = torch.tensor(node_gc, dtype=torch.float)
         y = torch.tensor(node_labels, dtype=torch.float)
-        n = torch.tensor(list(range(0, node_count)), dtype=torch.int)
         edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
 
         # prepare train/validate/test vectors
@@ -203,7 +208,15 @@ class Metagenomic(InMemoryDataset):
         val_mask = index_to_mask(val_index, size=node_count)
         test_mask = index_to_mask(test_index, size=node_count)
 
-        data = Data(x=x, edge_index=edge_index, y=y, n=n, g=g)
+        training_graph = overlap_graph
+        vertex_set = training_graph.vs
+        for i in range(node_count):
+          if test_mask[i]:
+            vertex_set[i]['species'] = 'Unknown'
+        training_graph.write_graphml(training_file)
+        learned_graph = training_graph
+
+        data = Data(x=x, edge_index=edge_index, y=y, g=g)
         data.train_mask = train_mask
         data.val_mask = val_mask
         data.test_mask = test_mask
@@ -267,9 +280,12 @@ def output(output_dir):
         data = data.to(device)
         _, preds = model(data).max(dim=1)
         pred_list = preds.tolist()
-        perm = data.n.tolist()
-        for idx,val in zip(perm,pred_list):
-            gf.write(str(idx) + '\t' + str(val) + '\n')
+        mask = data('test_mask')
+        vertex_set = learned_graph.vs
+        for i in range(len(mask)):
+          if mask[i]:
+            vertex_set[i]['species'] = species_set[pred_list[i]] 
+            print(vertex_set[i])
     
     gf.close()
 
@@ -327,6 +343,7 @@ dataset = Metagenomic(root=input_dir, name=data_name)
 data = dataset[0]
 print(data)
 
+exit()
 logger.info("Graph construction done!")
 elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
