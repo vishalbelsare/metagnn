@@ -27,8 +27,7 @@ from torch_geometric.data import DataLoader
 from torch_geometric.data import Data
 from torch_geometric.data import InMemoryDataset
 
-learned_graph = Graph()
-species_set = set()
+species_map = BidirectionalMap()
 
 def index_to_mask(index, size):
     mask = torch.zeros((size, ), dtype=torch.bool)
@@ -183,7 +182,6 @@ class Metagenomic(InMemoryDataset):
 
         # prepare vertex labels
         node_labels = []
-        species_map = {}
         species_set = set(species)
         idx = 0
         for s in species_set:
@@ -273,21 +271,26 @@ def test():
     return accs
 
 @torch.no_grad()
-def output(output_dir):
-    gnn_f = output_dir + "/gnn.out"
-    gf = open(gnn_f, "w")
+def output(output_dir, input_dir):
+    overlap_graph_file = input_dir + '/cami6overlap/raw/6species_with_readnames.graphmlz'
     for data in loader:
         data = data.to(device)
         _, preds = model(data).max(dim=1)
         pred_list = preds.tolist()
-        mask = data('test_mask')
+        mask = data.test_mask
+        learned_graph = Graph()
+        learned_graph = learned_graph.Read_GraphMLz(overlap_graph_file)
+        rev_species_map = species_map.inverse
+        print(species_map)
+        print("Learning Nodes: " + str(learned_graph.vcount()))
+        print("Learning Edges: " + str(learned_graph.ecount()))
         vertex_set = learned_graph.vs
-        for i in range(len(mask)):
+        for i in range(len(vertex_set)):
           if mask[i]:
-            vertex_set[i]['species'] = species_set[pred_list[i]] 
+            vertex_set[i]['species'] = rev_species_map[pred_list[i]] 
             print(vertex_set[i])
-    
-    gf.close()
+        learned_file = output_dir + '/6species_learned.graphml'
+        learned_graph.write_graphml(learned_file)
 
 # Sample command
 # -------------------------------------------------------------------
@@ -341,9 +344,8 @@ logger.info("Constructing the overlap graph and node feature vectors")
 
 dataset = Metagenomic(root=input_dir, name=data_name)
 data = dataset[0]
-print(data)
+#print(data)
 
-exit()
 logger.info("Graph construction done!")
 elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
@@ -378,5 +380,5 @@ elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 
 #Print GCN model output
-# output(output_dir)
+output(output_dir, input_dir)
 
