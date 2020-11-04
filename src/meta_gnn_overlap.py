@@ -22,7 +22,6 @@ from igraph import *
 from collections import defaultdict
 from bidirectionalmap.bidirectionalmap import BidirectionalMap
 
-from torch_geometric.data import ClusterData, ClusterLoader
 from torch_geometric.data import DataLoader
 from torch_geometric.data import Data
 from torch_geometric.data import InMemoryDataset
@@ -277,18 +276,16 @@ def output(output_dir, input_dir):
         data = data.to(device)
         _, preds = model(data).max(dim=1)
         pred_list = preds.tolist()
-        mask = data.test_mask
         learned_graph = Graph()
         learned_graph = learned_graph.Read_GraphMLz(overlap_graph_file)
         rev_species_map = species_map.inverse
-        print(species_map)
-        print("Learning Nodes: " + str(learned_graph.vcount()))
-        print("Learning Edges: " + str(learned_graph.ecount()))
         vertex_set = learned_graph.vs
         for i in range(len(vertex_set)):
-          if mask[i]:
-            vertex_set[i]['species'] = rev_species_map[pred_list[i]] 
-            print(vertex_set[i])
+            if vertex_set[i]['species'] == rev_species_map[pred_list[i]]:
+                vertex_set[i]['pred'] = 1
+            else:
+                vertex_set[i]['pred'] = 0
+            vertex_set[i]['species'] == rev_species_map[pred_list[i]]
         learned_file = output_dir + '/6species_learned.graphml'
         learned_graph.write_graphml(learned_file)
 
@@ -343,7 +340,7 @@ logger.info("MetaGNN started")
 logger.info("Constructing the overlap graph and node feature vectors")
 
 dataset = Metagenomic(root=input_dir, name=data_name)
-data = dataset[0]
+#data = dataset[0]
 #print(data)
 
 logger.info("Graph construction done!")
@@ -354,7 +351,7 @@ logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 
 #loader = ClusterLoader(cluster_data, batch_size=1, shuffle=False, num_workers=5)
 
-loader = DataLoader(dataset)
+loader = DataLoader(dataset, batch_size=512, shuffle=True)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logger.info("Running GNN on: "+str(device))
