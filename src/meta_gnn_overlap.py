@@ -282,9 +282,9 @@ def output(output_dir, input_dir):
         vertex_set = learned_graph.vs
         for i in range(len(vertex_set)):
             if vertex_set[i]['species'] == rev_species_map[pred_list[i]]:
-                vertex_set[i]['pred'] = 1
+                vertex_set[i]['pred'] = 'Correct'
             else:
-                vertex_set[i]['pred'] = 0
+                vertex_set[i]['pred'] = 'Wrong'
             vertex_set[i]['species'] == rev_species_map[pred_list[i]]
         learned_file = output_dir + '/6species_learned.graphml'
         learned_graph.write_graphml(learned_file)
