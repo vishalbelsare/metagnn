@@ -152,18 +152,6 @@ class Metagenomic(InMemoryDataset):
         overlap_graph.simplify(multiple=True, loops=True, combine_edges=None)
         overlap_graph.write_graphml(all_file)
 
-        # print a subgraph
-        # bfsiter = overlap_graph.bfsiter(10, OUT, True)
-        # vertex_set = set()
-        # for v in bfsiter:
-          # if v[1] < 2: 
-            # if v[1] > 0:
-              # vertex_set.add(v[2].index)
-              # vertex_set.add(v[0].index)
-        # vertex_list = list(vertex_set)
-        # subgraph = overlap_graph.subgraph(vertex_list)
-        # subgraph_file = "./subgraph.graphml"
-        # subgraph.write_graphml(subgraph_file)
         # prepare edge list
         for e in overlap_graph.get_edgelist():
             source_nodes.append(e[0])
@@ -292,14 +280,28 @@ def output(output_dir, input_dir):
         learned_graph = learned_graph.Read_GraphMLz(overlap_graph_file)
         rev_species_map = species_map.inverse
         vertex_set = learned_graph.vs
+        miss_pred_vertices = []
         for i in range(len(vertex_set)):
             if vertex_set[i]['species'] == rev_species_map[pred_list[i]]:
                 vertex_set[i]['pred'] = 'Correct'
             else:
                 vertex_set[i]['pred'] = 'Wrong'
+                miss_pred_vertices.append(vertex_set[i].index)
             vertex_set[i]['species'] == rev_species_map[pred_list[i]]
         learned_file = output_dir + '/6species_learned.graphml'
         learned_graph.write_graphml(learned_file)
+        # print a subgraph
+        bfsiter = learned_graph.bfsiter(miss_pred_vertices[0], OUT, True)
+        vertex_set = set()
+        for v in bfsiter:
+            if v[1] < 2: 
+                if v[1] > 0:
+                    vertex_set.add(v[2].index)
+                    vertex_set.add(v[0].index)
+        vertex_list = list(vertex_set)
+        subgraph = learned_graph.subgraph(vertex_list)
+        subgraph_file = output_dir + '/6species_subgraph.graphml'
+        subgraph.write_graphml(subgraph_file)
 
 # Sample command
 # -------------------------------------------------------------------
@@ -354,7 +356,7 @@ logger.info("Constructing the overlap graph and node feature vectors")
 dataset = Metagenomic(root=input_dir, name=data_name)
 #data = dataset[0]
 #print(data)
-exit()
+
 logger.info("Graph construction done!")
 elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
