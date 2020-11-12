@@ -152,6 +152,18 @@ class Metagenomic(InMemoryDataset):
         overlap_graph.simplify(multiple=True, loops=True, combine_edges=None)
         overlap_graph.write_graphml(all_file)
 
+        # print a subgraph
+        # bfsiter = overlap_graph.bfsiter(10, OUT, True)
+        # vertex_set = set()
+        # for v in bfsiter:
+          # if v[1] < 2: 
+            # if v[1] > 0:
+              # vertex_set.add(v[2].index)
+              # vertex_set.add(v[0].index)
+        # vertex_list = list(vertex_set)
+        # subgraph = overlap_graph.subgraph(vertex_list)
+        # subgraph_file = "./subgraph.graphml"
+        # subgraph.write_graphml(subgraph_file)
         # prepare edge list
         for e in overlap_graph.get_edgelist():
             source_nodes.append(e[0])
@@ -342,7 +354,7 @@ logger.info("Constructing the overlap graph and node feature vectors")
 dataset = Metagenomic(root=input_dir, name=data_name)
 #data = dataset[0]
 #print(data)
-
+exit()
 logger.info("Graph construction done!")
 elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
