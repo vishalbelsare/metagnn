@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 from __future__ import division
 import sys
 import os
@@ -96,6 +97,24 @@ def read_or_compute_features(file_name, read_names):
         gc_bias, tf = read_features(gc_bias_f, tf_f)
     return gc_bias, tf
 
+
+def build_species_map(file_name):
+    overlap_graph = Graph()
+    overlap_graph = overlap_graph.Read_GraphMLz(file_name)
+    overlap_graph.simplify(multiple=True, loops=True, combine_edges=None)
+    
+    species = []
+    for v in overlap_graph.vs:
+        species.append(v['species'])
+
+    # prepare vertex labels
+    species_set = set(species)
+    idx = 0
+    for s in species_set:
+        species_map[s] = idx
+        idx += 1
+
+
 class Metagenomic(InMemoryDataset):
     r""" Assembly graph built over raw metagenomic data using spades.
         Nodes represent contigs and edges represent link between them.
@@ -164,12 +183,10 @@ class Metagenomic(InMemoryDataset):
         print("Clusters: " + str(len(clusters)))
 
         # get all vertex names
-        species = []
         vertex_names = []
         vertexes = overlap_graph.vs
         for v in overlap_graph.vs:
             vertex_names.append(v['readname'])
-            species.append(v['species'])
         gc_map, tetra_freq_map = read_or_compute_features(read_file, vertex_names)
 
         # prepare node features
@@ -181,11 +198,6 @@ class Metagenomic(InMemoryDataset):
 
         # prepare vertex labels
         node_labels = []
-        species_set = set(species)
-        idx = 0
-        for s in species_set:
-            species_map[s] = idx
-            idx += 1
         for v in overlap_graph.vs:
             node_labels.append(species_map[v['species']])
 
@@ -353,10 +365,12 @@ logger.info("MetaGNN started")
 
 logger.info("Constructing the overlap graph and node feature vectors")
 
+build_species_map(osp.join(input_dir, data_name, 'raw', '6species_with_readnames.graphmlz'))
 dataset = Metagenomic(root=input_dir, name=data_name)
-#data = dataset[0]
-#print(data)
+data = dataset[0]
+print(data)
 
+#exit()
 logger.info("Graph construction done!")
 elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
