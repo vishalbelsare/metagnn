@@ -53,16 +53,14 @@ for b in bin_map:
         if r not in read_species_map:
             print(r)
         s = read_species_map[r]
-        if read_species_map[s] in species_cnt:
-            species_cnt[s] =+ 1
-        else:
-            species_cnt[s] = 1
+        species_cnt[s] += 1
     # print(species_cnt)
     m = 0
     for s in species_cnt:
         if m < species_cnt[s]:
             m = species_cnt[s]
     total_max += m
+    break
 
 precision = total_max/total_reads
 recall = total_max/len(read_species_map)
