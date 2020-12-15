@@ -60,7 +60,6 @@ with open(ground_truth_file) as file:
 
 #print(len(species_map))
 
-
 total_max_species = 0
 for b in bin_map: # each bin
     # print(len(bin_map[b]))
