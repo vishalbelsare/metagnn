@@ -11,6 +11,7 @@ import argparse
 import re
 import logging
 import os.path as osp
+from sys import stdout
 
 import numpy as np
 import pickle
@@ -23,6 +24,7 @@ from igraph import *
 from collections import defaultdict
 from bidirectionalmap.bidirectionalmap import BidirectionalMap
 
+from torch_geometric.data import ClusterData, ClusterLoader
 from torch_geometric.data import DataLoader
 from torch_geometric.data import Data
 from torch_geometric.data import InMemoryDataset
@@ -70,10 +72,14 @@ def compute_contig_features(read_file, read_names):
     compute_tetra_list()
     gc_map = defaultdict(float) 
     tetra_freq_map = defaultdict(list)
+    idx = 0
     for record in SeqIO.parse(read_file, 'fastq'):
         if record.name in read_names:
             gc_map[record.name] = compute_gc_bias(record.seq)
             tetra_freq_map[record.name] = compute_tetra_freq(record.seq)
+        stdout.write("\r%d" % idx)
+        stdout.flush()
+        idx += 1
     return gc_map, tetra_freq_map
 
 def read_features(gc_bias_f, tf_f):
@@ -100,7 +106,7 @@ def read_or_compute_features(file_name, read_names):
 
 def build_species_map(file_name):
     overlap_graph = Graph()
-    overlap_graph = overlap_graph.Read_GraphMLz(file_name)
+    overlap_graph = overlap_graph.Read_GraphML(file_name)
     overlap_graph.simplify(multiple=True, loops=True, combine_edges=None)
     
     species = []
@@ -146,7 +152,7 @@ class Metagenomic(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        return ['6species_with_readnames.graphmlz', 'shuffled_reads.fastq', '6species_all.graphml', '6species_training.graphml']
+        return ['species_with_readnames.graphml', 'shuffled_reads.fastq', 'species_all.graphml', 'species_training.graphml']
 
     @property
     def processed_file_names(self):
@@ -163,13 +169,14 @@ class Metagenomic(InMemoryDataset):
         # Read assembly graph and node features from the file into arrays
 
         overlap_graph = Graph()
-        overlap_graph = overlap_graph.Read_GraphMLz(overlap_graph_file)
+        overlap_graph = overlap_graph.Read_GraphML(overlap_graph_file)
+        # overlap_graph = overlap_graph.clusters().subgraph(1)
 
         source_nodes = []
         dest_nodes = []
         # Add edges to the graph
         overlap_graph.simplify(multiple=True, loops=True, combine_edges=None)
-        overlap_graph.write_graphml(all_file)
+        # overlap_graph.write_graphml(all_file)
 
         # prepare edge list
         for e in overlap_graph.get_edgelist():
@@ -282,14 +289,14 @@ def test():
     return accs
 
 @torch.no_grad()
-def output(output_dir, input_dir):
-    overlap_graph_file = input_dir + '/cami6overlap/raw/6species_with_readnames.graphmlz'
+def output(output_dir, input_dir, data_name):
+    overlap_graph_file = input_dir + '/' + data_name + '/raw/species_with_readnames.graphml'
     for data in loader:
         data = data.to(device)
         _, preds = model(data).max(dim=1)
         pred_list = preds.tolist()
         learned_graph = Graph()
-        learned_graph = learned_graph.Read_GraphMLz(overlap_graph_file)
+        learned_graph = learned_graph.Read_GraphML(overlap_graph_file)
         rev_species_map = species_map.inverse
         vertex_set = learned_graph.vs
         miss_pred_vertices = []
@@ -300,7 +307,7 @@ def output(output_dir, input_dir):
                 vertex_set[i]['pred'] = 'Wrong'
                 miss_pred_vertices.append(vertex_set[i].index)
             vertex_set[i]['species'] == rev_species_map[pred_list[i]]
-        learned_file = output_dir + '/6species_learned.graphml'
+        learned_file = output_dir + '/species_learned.graphml'
         learned_graph.write_graphml(learned_file)
         # print a subgraph
         bfsiter = learned_graph.bfsiter(miss_pred_vertices[0], OUT, True)
@@ -312,7 +319,7 @@ def output(output_dir, input_dir):
                     vertex_set.add(v[0].index)
         vertex_list = list(vertex_set)
         subgraph = learned_graph.subgraph(vertex_list)
-        subgraph_file = output_dir + '/6species_subgraph.graphml'
+        subgraph_file = output_dir + '/species_subgraph.graphml'
         subgraph.write_graphml(subgraph_file)
 
 # Sample command
@@ -365,7 +372,7 @@ logger.info("MetaGNN started")
 
 logger.info("Constructing the overlap graph and node feature vectors")
 
-build_species_map(osp.join(input_dir, data_name, 'raw', '6species_with_readnames.graphmlz'))
+build_species_map(osp.join(input_dir, data_name, 'raw', 'species_with_readnames.graphml'))
 dataset = Metagenomic(root=input_dir, name=data_name)
 data = dataset[0]
 print(data)
@@ -377,7 +384,7 @@ logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 
 #cluster_data = ClusterData(data, num_parts=100, recursive=False, save_dir=dataset.processed_dir)
 
-#loader = ClusterLoader(cluster_data, batch_size=1, shuffle=False, num_workers=5)
+#loader = ClusterLoader(cluster_data, batch_size=128, shuffle=False, num_workers=5)
 
 loader = DataLoader(dataset, batch_size=512, shuffle=True)
 
@@ -405,5 +412,5 @@ elapsed_time = time.time() - start_time
 logger.info("Elapsed time: "+str(elapsed_time)+" seconds")
 
 #Print GCN model output
-output(output_dir, input_dir)
+output(output_dir, input_dir, data_name)
 

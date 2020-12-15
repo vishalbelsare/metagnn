@@ -33,11 +33,10 @@ with open(ground_truth_file) as file:
         line = file.readline()
 
 filtered_fastq = sys.argv[3]
-filtered_fastq_file = open(filtered_fastq, 'w')
+filtered_records = []
 for record in SeqIO.parse(read_file, 'fastq'):
     if record.name in read_species_map:
-        filtered_fastq_file.write('@' + record.name + '\n')
-        filtered_fastq_file.write(str(record.seq) + '\n')
-        filtered_fastq_file.write('+' + '\n')
-        filtered_fastq_file.write('+' + '\n')
+        filtered_records.append(record)
+
+SeqIO.write(filtered_records, filtered_fastq, 'fastq')
 

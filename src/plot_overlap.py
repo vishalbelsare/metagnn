@@ -25,50 +25,87 @@ from bidirectionalmap.bidirectionalmap import BidirectionalMap
 bin_file = sys.argv[1]
 
 bin_map  = defaultdict(list)
+bin_map_reverse = defaultdict(str)
 total_reads = 0
 with open(bin_file) as file:
     line = file.readline()
     while line != "":
         strings = line.split("\t")
-        bin_map[strings[1].rstrip('\n')].append(strings[0])
+        b = strings[1].rstrip('\n')
+        r = strings[0]
+        bin_map[b].append(r)
+        bin_map_reverse[r] = b
         total_reads += 1
         line = file.readline()
-print(len(bin_map))
+#print(len(bin_map))
 
-read_species_map = defaultdict(str)
+species_map = defaultdict(list) 
+species_map_reverse = defaultdict(str) 
+all_reads = 0
 ground_truth_file = sys.argv[2]
 with open(ground_truth_file) as file:
     line = file.readline()
     while line != "":
         strings = line.split('\t')
-        read_species_map[strings[0]] = strings[1].rstrip('\n')
+        s = strings[1].rstrip('\n')
+        r = strings[0]
+        species_map[s].append(r)
+        species_map_reverse[r] = s
+        all_reads += 1
         line = file.readline()
-print(len(read_species_map))
 
-total_max = 0
-for b in bin_map:
+#for s in species_map:
+    #print(s)
+    #print(len(species_map[s]))
+
+#print(len(species_map))
+
+
+total_max_species = 0
+for b in bin_map: # each bin
     # print(len(bin_map[b]))
     species_cnt = defaultdict(int)
-    for r in bin_map[b]:
-        if r not in read_species_map:
+    for r in bin_map[b]: # each read in bin b
+        if r not in species_map_reverse:
             print(r)
-        s = read_species_map[r]
-        if read_species_map[s] in species_cnt:
-            species_cnt[s] =+ 1
+        s = species_map_reverse[r] # species of read r
+        if s in species_cnt: #increment species count
+            species_cnt[s] += 1
         else:
             species_cnt[s] = 1
     # print(species_cnt)
     m = 0
-    for s in species_cnt:
+    for s in species_cnt: # find species with max count
         if m < species_cnt[s]:
             m = species_cnt[s]
-    total_max += m
+    total_max_species += m
 
-precision = total_max/total_reads
-recall = total_max/len(read_species_map)
-
+precision = total_max_species/total_reads
 print("Precision: " + str(precision))
+
+
+total_max_bins = 0
+for s in species_map: # each species
+    # print(len(bin_map[b]))
+    bin_cnt = defaultdict(int)
+    for r in species_map[s]: # each read in species s
+        if r not in bin_map_reverse:
+            print(r)
+        b = bin_map_reverse[r] # bin of read r
+        if b in bin_cnt: #increment bin count
+            bin_cnt[b] += 1
+        else:
+            bin_cnt[b] = 1
+    # print(bin_cnt)
+    m = 0
+    for b in bin_cnt: # find bin with max count
+        if m < bin_cnt[b]:
+            m = bin_cnt[b]
+    total_max_bins += m
+
+recall = total_max_bins/all_reads
 print("Recall: " + str(recall))
+
 
 # overlap_graph_file = sys.argv[2]
 # overlap_graph = Graph()
