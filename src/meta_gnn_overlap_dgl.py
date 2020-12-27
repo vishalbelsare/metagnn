@@ -12,6 +12,7 @@ from dgl.convert import from_networkx
 from dgl.convert import to_networkx
 from dgl.data.utils import save_graphs, load_graphs, save_info, load_info, makedirs, _get_dgl_url
 from dgl.data.utils import deprecate_property, deprecate_function
+from dgl.data.utils import generate_mask_tensor
 
 import dgl.backend as F
 from gcn import GCN
@@ -163,7 +164,7 @@ class Metagenomic(DGLBuiltinDataset):
     """
     _urls = {}
 
-    def __init__(self, name, raw_dir=None, force_reload=False, verbose=True):
+    def __init__(self, name, raw_dir, force_reload=False, verbose=True):
         name = 'metagenomic'
         url = ''
         super(DGLBuiltinDataset, self).__init__(name,
@@ -226,7 +227,7 @@ class Metagenomic(DGLBuiltinDataset):
         integer_encoded = integer_encoded.reshape(len(integer_encoded), 1)
         onehot_labels = onehot_encoder.fit_transform(integer_encoded)
         labels = np.argmax(onehot_labels, 1)
-       
+
         train_size = int(node_count/3)
         val_size = train_size
         train_index = torch.arange(train_size)
@@ -335,8 +336,8 @@ class Metagenomic(DGLBuiltinDataset):
         return self.name + '_dgl_graph'
 
     @property
-    def num_labels(self):
-        deprecate_property('dataset.num_labels', 'dataset.num_classes')
+    def num_classes(self):
+        deprecate_property('dataset.num_classes', 'dataset.num_classes')
         return self.num_classes
 
     @property
@@ -389,7 +390,7 @@ def evaluate(model, features, labels, mask):
 def main(args):
     # load and preprocess dataset
     if args.dataset == 'meta':
-        data = Metagenomic('metagenomic')
+        data = Metagenomic('metagenomic', args.raw_dir)
     else:
         raise ValueError('Unknown dataset: {}'.format(args.dataset))
 
@@ -407,8 +408,8 @@ def main(args):
     val_mask = g.ndata['val_mask']
     test_mask = g.ndata['test_mask']
     in_feats = features.shape[1]
-    n_classes = data.num_labels
-    n_edges = data.graph.number_of_edges()
+    n_classes = data.num_classes
+    n_edges = g.number_of_edges()
     print("""----Data statistics------'
       #Edges %d
       #Classes %d
@@ -488,16 +489,18 @@ if __name__ == '__main__':
             help="gpu")
     parser.add_argument("--lr", type=float, default=1e-2,
             help="learning rate")
-    parser.add_argument("--n-epochs", type=int, default=200,
+    parser.add_argument("--n-epochs", type=int, default=100,
             help="number of training epochs")
-    parser.add_argument("--n-hidden", type=int, default=16,
+    parser.add_argument("--n-hidden", type=int, default=64,
             help="number of hidden gcn units")
-    parser.add_argument("--n-layers", type=int, default=1,
+    parser.add_argument("--n-layers", type=int, default=2,
             help="number of hidden gcn layers")
     parser.add_argument("--weight-decay", type=float, default=5e-4,
             help="Weight for L2 loss")
     parser.add_argument("--self-loop", action='store_true',
             help="graph self-loop (default=False)")
+    parser.add_argument("--raw-dir", type=str, default='~/.dgl/',
+            help="raw data directory")
     parser.set_defaults(self_loop=False)
     args = parser.parse_args()
     print(args)
