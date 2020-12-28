@@ -220,13 +220,14 @@ class Metagenomic(DGLBuiltinDataset):
         graph.add_edges_from(overlap_graph.get_edgelist())
 
         features = torch.tensor(node_tfq, dtype=torch.float)
-        values = array(node_labels)
-        label_encoder = LabelEncoder()
-        integer_encoded = label_encoder.fit_transform(values)
-        onehot_encoder = OneHotEncoder(sparse=False)
-        integer_encoded = integer_encoded.reshape(len(integer_encoded), 1)
-        onehot_labels = onehot_encoder.fit_transform(integer_encoded)
-        labels = np.argmax(onehot_labels, 1)
+        
+        # values = array(node_labels)
+        # label_encoder = LabelEncoder()
+        # integer_encoded = label_encoder.fit_transform(values)
+        # onehot_encoder = OneHotEncoder(sparse=False)
+        # integer_encoded = integer_encoded.reshape(len(integer_encoded), 1)
+        # onehot_labels = onehot_encoder.fit_transform(integer_encoded)
+        # labels = np.argmax(onehot_labels, 1)
 
         train_size = int(node_count/3)
         
@@ -246,10 +247,10 @@ class Metagenomic(DGLBuiltinDataset):
         g.ndata['train_mask'] = train_mask
         g.ndata['val_mask'] = val_mask
         g.ndata['test_mask'] = test_mask
-        g.ndata['label'] = F.tensor(labels)
+        g.ndata['label'] = F.tensor(node_labels)
         g.ndata['feat'] = F.tensor(_preprocess_features(features), dtype=F.data_type_dict['float32'])
-        self._num_classes = onehot_labels.shape[1]
-        self._labels = labels
+        self._num_classes = len(species_map)
+        self._labels = node_labels
         self._g = g
 
         if self.verbose:
@@ -441,8 +442,7 @@ def main(args):
 
     if cuda:
         model.cuda()
-    # loss_fcn = torch.nn.CrossEntropyLoss()
-    # loss_fcn = Func.nll_loss()
+    loss_fcn = torch.nn.CrossEntropyLoss()
 
     # use optimizer
     optimizer = torch.optim.Adam(model.parameters(),
@@ -457,8 +457,8 @@ def main(args):
             t0 = time.time()
         # forward
         logits = model(features)
-        # loss = loss_fcn(logits[train_mask], labels[train_mask])
-        loss = Func.nll_loss(logits[train_mask], labels[train_mask], reduction='none')
+        loss = loss_fcn(logits[train_mask], labels[train_mask])
+        # loss = Func.nll_loss(logits[train_mask], labels[train_mask], reduction='none')
 
         optimizer.zero_grad()
         loss.mean().backward()
