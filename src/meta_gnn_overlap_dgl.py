@@ -189,7 +189,7 @@ class Metagenomic(DGLBuiltinDataset):
         # Add edges to the graph
         overlap_graph.simplify(multiple=True, loops=True, combine_edges=None)
         # overlap_graph.write_graphml(all_file)
-        
+
         node_count = overlap_graph.vcount()
         # print("Nodes: " + str(overlap_graph.vcount()))
         # print("Edges: " + str(overlap_graph.ecount()))
@@ -229,10 +229,13 @@ class Metagenomic(DGLBuiltinDataset):
         labels = np.argmax(onehot_labels, 1)
 
         train_size = int(node_count/3)
-        val_size = train_size
-        train_index = torch.arange(train_size)
-        val_index = torch.arange(train_size, train_size+val_size)
-        test_index = torch.arange(train_size+val_size, node_count)
+        
+        all_indexes = [i for i in range(node_count)]
+        random.shuffle(all_indexes)
+        train_index = all_indexes[0:train_size]
+        val_index = all_indexes[train_size:train_size*2]
+        test_index = all_indexes[train_size*2:]
+    
         train_mask = index_to_mask(train_index, size=node_count)
         val_mask = index_to_mask(val_index, size=node_count)
         test_mask = index_to_mask(test_index, size=node_count)
@@ -446,7 +449,8 @@ def main(args):
 
     if cuda:
         model.cuda()
-    loss_fcn = torch.nn.CrossEntropyLoss()
+    # loss_fcn = torch.nn.CrossEntropyLoss()
+    # loss_fcn = Func.nll_loss()
 
     # use optimizer
     optimizer = torch.optim.Adam(model.parameters(),
@@ -461,10 +465,11 @@ def main(args):
             t0 = time.time()
         # forward
         logits = model(features)
-        loss = loss_fcn(logits[train_mask], labels[train_mask])
+        # loss = loss_fcn(logits[train_mask], labels[train_mask])
+        loss = Func.nll_loss(logits[train_mask], labels[train_mask], reduction='none')
 
         optimizer.zero_grad()
-        loss.backward()
+        loss.mean().backward()
         optimizer.step()
 
         if epoch >= 3:
@@ -472,7 +477,7 @@ def main(args):
 
         acc = evaluate(model, features, labels, val_mask)
         print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
-              "ETputs(KTEPS) {:.2f}". format(epoch, np.mean(dur), loss.item(),
+              "ETputs(KTEPS) {:.2f}". format(epoch, np.mean(dur), loss.mean().item(),
                                              acc, n_edges / np.mean(dur) / 1000))
 
     print()
