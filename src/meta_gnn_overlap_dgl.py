@@ -240,14 +240,6 @@ class Metagenomic(DGLBuiltinDataset):
         val_mask = index_to_mask(val_index, size=node_count)
         test_mask = index_to_mask(test_index, size=node_count)
 
-        # idx_test = test_idx_range.tolist()
-        # idx_train = range(len(y))
-        # idx_val = range(len(y), len(y)+500)
-
-        # train_mask = generate_mask_tensor(_sample_mask(idx_train, labels.shape[0]))
-        # val_mask = generate_mask_tensor(_sample_mask(idx_val, labels.shape[0]))
-        # test_mask = generate_mask_tensor(_sample_mask(idx_test, labels.shape[0]))
-
         self._graph = graph
         g = from_networkx(graph)
 
