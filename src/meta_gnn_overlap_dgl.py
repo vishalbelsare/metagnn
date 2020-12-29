@@ -383,6 +383,21 @@ def evaluate(model, features, labels, mask):
         correct = torch.sum(indices == labels)
         return correct.item() * 1.0 / len(labels)
 
+def test(model, features, labels, train_mask, val_mask, test_mask):
+    model.eval()
+    with torch.no_grad():
+        logits = model(features)
+        accs = []
+        for mask in (train_mask, val_mask, test_mask):
+            logits = logits[mask]
+            labels = labels[mask]
+            _, indices = torch.max(logits, dim=1)
+            correct = torch.sum(indices == labels)
+            acc = correct.item() * 1.0 / len(labels)
+            accs.append(acc)
+
+        return accs
+
 def main(args):
     # load and preprocess dataset
     if args.dataset == 'meta':
@@ -461,16 +476,22 @@ def main(args):
         # loss = Func.nll_loss(logits[train_mask], labels[train_mask], reduction='none')
 
         optimizer.zero_grad()
-        loss.mean().backward()
+        loss.backward()
         optimizer.step()
 
         if epoch >= 3:
             dur.append(time.time() - t0)
 
+        accs = []
+        acc = evaluate(model, features, labels, train_mask)
+        accs.append(acc)
         acc = evaluate(model, features, labels, val_mask)
-        print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
-              "ETputs(KTEPS) {:.2f}". format(epoch, np.mean(dur), loss.mean().item(),
-                                             acc, n_edges / np.mean(dur) / 1000))
+        accs.append(acc)
+        acc = evaluate(model, features, labels, test_mask)
+        accs.append(acc)
+        print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Train Accuracy {:.4f} | Val Accuracy {:.4f} | Test Accuracy {:.4f} | "
+              "ETputs(KTEPS) {:.2f}". format(epoch, np.mean(dur), loss.item(),
+                                             accs[0], accs[1], accs[2], n_edges / np.mean(dur) / 1000))
 
     print()
     acc = evaluate(model, features, labels, test_mask)
