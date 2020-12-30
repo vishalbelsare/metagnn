@@ -4,6 +4,7 @@ import networkx as nx
 import torch
 import torch.nn as nn
 import torch.nn.functional as Func
+
 import dgl
 from dgl.data import register_data_args
 from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
@@ -14,8 +15,9 @@ from dgl.data.utils import save_graphs, load_graphs, save_info, load_info, maked
 from dgl.data.utils import deprecate_property, deprecate_function
 from dgl.data.utils import generate_mask_tensor
 
+from dgl.nn.pytorch import GraphConv
 import dgl.backend as F
-from gcn import GCN
+# from gcn import GCN
 #from gcn_mp import GCN
 #from gcn_spmv import GCN
 
@@ -230,12 +232,13 @@ class Metagenomic(DGLBuiltinDataset):
         # labels = np.argmax(onehot_labels, 1)
 
         train_size = int(node_count/3)
+        val_size = int(node_count/10)
         
         all_indexes = [i for i in range(node_count)]
         random.shuffle(all_indexes)
         train_index = all_indexes[0:train_size]
-        val_index = all_indexes[train_size:train_size*2]
-        test_index = all_indexes[train_size*2:]
+        val_index = all_indexes[train_size:train_size+val_size]
+        test_index = all_indexes[train_size+val_size:]
     
         train_mask = index_to_mask(train_index, size=node_count)
         val_mask = index_to_mask(val_index, size=node_count)
@@ -373,6 +376,35 @@ class Metagenomic(DGLBuiltinDataset):
         deprecate_property('dataset.feat', 'g.ndata[\'feat\']')
         return self._g.ndata['feat']
 
+class GCN(nn.Module):
+    def __init__(self,
+                 g,
+                 in_feats,
+                 n_hidden,
+                 n_classes,
+                 n_layers,
+                 activation,
+                 dropout):
+        super(GCN, self).__init__()
+        self.g = g
+        self.layers = nn.ModuleList()
+        # input layer
+        self.layers.append(GraphConv(in_feats, n_hidden, activation=activation))
+        # hidden layers
+        for i in range(n_layers - 1):
+            self.layers.append(GraphConv(n_hidden, n_hidden, activation=activation))
+        # output layer
+        self.layers.append(GraphConv(n_hidden, n_classes))
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, features):
+        h = features
+        for i, layer in enumerate(self.layers):
+            if i != 0:
+                h = self.dropout(h)
+            h = layer(self.g, h)
+        return h
+
 def evaluate(model, features, labels, mask):
     model.eval()
     with torch.no_grad():
@@ -384,7 +416,7 @@ def evaluate(model, features, labels, mask):
         return correct.item() * 1.0 / len(labels)
 
 def test(model, features, labels, train_mask, val_mask, test_mask):
-    model.eval()
+    mode.eval()
     with torch.no_grad():
         logits = model(features)
         accs = []
@@ -470,12 +502,12 @@ def main(args):
         model.train()
         if epoch >= 3:
             t0 = time.time()
+        optimizer.zero_grad()
+        
         # forward
         logits = model(features)
         loss = loss_fcn(logits[train_mask], labels[train_mask])
         # loss = Func.nll_loss(logits[train_mask], labels[train_mask], reduction='none')
-
-        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
