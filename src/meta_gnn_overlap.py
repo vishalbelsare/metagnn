@@ -212,6 +212,7 @@ class Metagenomic(InMemoryDataset):
         x = torch.tensor(node_tfq, dtype=torch.float)
         g = torch.tensor(node_gc, dtype=torch.float)
         y = torch.tensor(node_labels, dtype=torch.float)
+        n = torch.tensor(list(range(0, node_count)), dtype=torch.int)
         edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
 
         # prepare train/validate/test vectors
@@ -232,7 +233,7 @@ class Metagenomic(InMemoryDataset):
         training_graph.write_graphml(training_file)
         learned_graph = training_graph
 
-        data = Data(x=x, edge_index=edge_index, y=y, g=g)
+        data = Data(x=x, edge_index=edge_index, y=y, g=g, n=n)
         data.train_mask = train_mask
         data.val_mask = val_mask
         data.test_mask = test_mask
@@ -294,33 +295,51 @@ def output(output_dir, input_dir, data_name):
     for data in loader:
         data = data.to(device)
         _, preds = model(data).max(dim=1)
-        pred_list = preds.tolist()
+        acc = preds.eq(data.y).sum().item() / len(data.y)
+        print(acc)
         learned_graph = Graph()
         learned_graph = learned_graph.Read_GraphML(overlap_graph_file)
         rev_species_map = species_map.inverse
         vertex_set = learned_graph.vs
         miss_pred_vertices = []
-        for i in range(len(vertex_set)):
-            if vertex_set[i]['species'] == rev_species_map[pred_list[i]]:
-                vertex_set[i]['pred'] = 'Correct'
+        perm = data.n.tolist()
+        orgs = data.y.tolist()
+        preds = preds.tolist()
+        train = data.train_mask.tolist()
+        for idx,org,pred,t in zip(perm,orgs,preds,train):
+            if pred == org:
+                vertex_set[idx]['pred'] = 'Correct'
             else:
-                vertex_set[i]['pred'] = 'Wrong'
-                miss_pred_vertices.append(vertex_set[i].index)
-            vertex_set[i]['species'] == rev_species_map[pred_list[i]]
+                vertex_set[idx]['pred'] = 'Wrong'
+            if t == 1:
+                vertex_set[idx]['species'] = rev_species_map[org] 
+            else:
+                vertex_set[idx]['species'] = rev_species_map[pred] 
         learned_file = output_dir + '/species_learned.graphml'
         learned_graph.write_graphml(learned_file)
+        # print train graph
+        train_graph = Graph()
+        train_graph = learned_graph.Read_GraphML(overlap_graph_file)
+        for idx,t in zip(perm,train):
+            if t == 1:
+                vertex_set[idx]['train'] = 'True'
+            else:
+                vertex_set[idx]['train'] = 'False'
+        train_file = output_dir + '/species_train.graphml'
+        train_graph.write_graphml(train_file)
+
         # print a subgraph
-        bfsiter = learned_graph.bfsiter(miss_pred_vertices[0], OUT, True)
-        vertex_set = set()
-        for v in bfsiter:
-            if v[1] < 2: 
-                if v[1] > 0:
-                    vertex_set.add(v[2].index)
-                    vertex_set.add(v[0].index)
-        vertex_list = list(vertex_set)
-        subgraph = learned_graph.subgraph(vertex_list)
-        subgraph_file = output_dir + '/species_subgraph.graphml'
-        subgraph.write_graphml(subgraph_file)
+        # bfsiter = learned_graph.bfsiter(miss_pred_vertices[0], OUT, True)
+        # vertex_set = set()
+        # for v in bfsiter:
+            # if v[1] < 2: 
+                # if v[1] > 0:
+                    # vertex_set.add(v[2].index)
+                    # vertex_set.add(v[0].index)
+        # vertex_list = list(vertex_set)
+        # subgraph = learned_graph.subgraph(vertex_list)
+        # subgraph_file = output_dir + '/species_subgraph.graphml'
+        # subgraph.write_graphml(subgraph_file)
 
 # Sample command
 # -------------------------------------------------------------------
@@ -399,7 +418,7 @@ optimizer = torch.optim.Adam([
 
 logger.info("Training model")
 best_val_acc = test_acc = 0
-for epoch in range(1, 20):
+for epoch in range(1, 25):
     train()
     train_acc, val_acc, tmp_test_acc = test()
     if val_acc > best_val_acc:
