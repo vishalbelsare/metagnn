@@ -21,7 +21,6 @@ from bidirectionalmap.bidirectionalmap import BidirectionalMap
 
 kraken_file = sys.argv[1]
 ground_truth_file = sys.argv[2]
-species_file = sys.argv[3]
 
 k_map = defaultdict(int)
 gt_map = defaultdict(int)
@@ -37,25 +36,11 @@ with open(kraken_file) as file:
 with open(ground_truth_file) as file:
     line = file.readline()
     while line != "":
-        strings = line.split('\t')
+        strings = line.split(' ')
         if len(strings) < 2:
             print(strings)
         strings[1] = strings[1].rstrip('\n')
-        gt_map[strings[0]] = strings[1]
-        line = file.readline()
-
-species_map = {}
-species_t_map = {}
-with open(species_file) as file:
-    line = file.readline()
-    while line != "":
-        strings = line.split(' ')
-        name = strings[0]
-        idx = 1
-        taxon = strings[1]
-        t_type = strings[2].rstrip('\n')
-        species_map[name] = int(taxon)
-        species_t_map[name] = t_type
+        gt_map[strings[0]] = int(strings[1])
         line = file.readline()
 
 true = 0
@@ -63,18 +48,18 @@ false = 0
 total = 0
 
 for read in k_map:
-    if read in gt_map:
+    r = read[:-2]
+    if r in gt_map:
         ktaxon = k_map[read]
-        sname = gt_map[read]
-        if sname in species_map:
-            taxon = species_map[sname]
-            t_type = species_t_map[sname]
-            # if (t_type == sys.argv[4]):
+        if ktaxon > 0:
+            taxon = gt_map[r]
             if ktaxon == taxon:
                 true += 1
             else:
                 false += 1
-            total += 1
+        total += 1
+    else:
+        print(read)
 
 print("True: " + str(true))
 print("False: " + str(false))

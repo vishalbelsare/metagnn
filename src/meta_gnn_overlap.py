@@ -216,11 +216,24 @@ class Metagenomic(InMemoryDataset):
         edge_index = torch.tensor([source_nodes, dest_nodes], dtype=torch.long)
 
         # prepare train/validate/test vectors
+        # train_size = int(node_count/3)
+        # val_size = train_size
+        # train_index = torch.arange(train_size)
+        # val_index = torch.arange(train_size, train_size+val_size)
+        # test_index = torch.arange(train_size+val_size, node_count)
+        # train_mask = index_to_mask(train_index, size=node_count)
+        # val_mask = index_to_mask(val_index, size=node_count)
+        # test_mask = index_to_mask(test_index, size=node_count)
+        
         train_size = int(node_count/3)
-        val_size = train_size
-        train_index = torch.arange(train_size)
-        val_index = torch.arange(train_size, train_size+val_size)
-        test_index = torch.arange(train_size+val_size, node_count)
+        val_size = int(node_count/3)
+        
+        all_indexes = [i for i in range(node_count)]
+        random.shuffle(all_indexes)
+        train_index = all_indexes[0:train_size]
+        val_index = all_indexes[train_size:train_size+val_size]
+        test_index = all_indexes[train_size+val_size:]
+    
         train_mask = index_to_mask(train_index, size=node_count)
         val_mask = index_to_mask(val_index, size=node_count)
         test_mask = index_to_mask(test_index, size=node_count)
@@ -306,40 +319,48 @@ def output(output_dir, input_dir, data_name):
         orgs = data.y.tolist()
         preds = preds.tolist()
         train = data.train_mask.tolist()
+        # annotate graph
         for idx,org,pred,t in zip(perm,orgs,preds,train):
             if pred == org:
                 vertex_set[idx]['pred'] = 'Correct'
             else:
                 vertex_set[idx]['pred'] = 'Wrong'
             if t == 1:
+                vertex_set[idx]['train'] = 'True'
                 vertex_set[idx]['species'] = rev_species_map[org] 
             else:
-                vertex_set[idx]['species'] = rev_species_map[pred] 
-        learned_file = output_dir + '/species_learned.graphml'
-        learned_graph.write_graphml(learned_file)
-        # print train graph
-        train_graph = Graph()
-        train_graph = learned_graph.Read_GraphML(overlap_graph_file)
-        for idx,t in zip(perm,train):
-            if t == 1:
-                vertex_set[idx]['train'] = 'True'
-            else:
                 vertex_set[idx]['train'] = 'False'
-        train_file = output_dir + '/species_train.graphml'
-        train_graph.write_graphml(train_file)
+                vertex_set[idx]['species'] = rev_species_map[pred] 
+        # learned_file = output_dir + '/species_learned.graphml'
+        # learned_graph.write_graphml(learned_file)
+       
+        t_idx_list = []
+        for s in species_map:
+            for v in vertex_set:
+                if v['species'] == s:
+                    t_idx_list.append(v.index)
+                    break
+        print(t_idx_list)
 
         # print a subgraph
-        # bfsiter = learned_graph.bfsiter(miss_pred_vertices[0], OUT, True)
-        # vertex_set = set()
-        # for v in bfsiter:
-            # if v[1] < 2: 
-                # if v[1] > 0:
-                    # vertex_set.add(v[2].index)
-                    # vertex_set.add(v[0].index)
-        # vertex_list = list(vertex_set)
-        # subgraph = learned_graph.subgraph(vertex_list)
-        # subgraph_file = output_dir + '/species_subgraph.graphml'
-        # subgraph.write_graphml(subgraph_file)
+        edge_set = set()
+        for idx in t_idx_list:
+            bfsiter = learned_graph.bfsiter(vertex_set[idx], OUT, True)
+            for v in bfsiter:
+                if v[1] < 3: 
+                    if v[1] > 0:
+                        edge_set.add(learned_graph.get_eid(v[2].index, v[0].index))
+                        # subvertex_set.add(v[2].index)
+                        # subvertex_set.add(v[0].index)
+
+        subedge_list = list(edge_set)
+        subgraph = learned_graph.subgraph_edges(subedge_list)
+        print(subgraph.vcount())
+        print(subgraph.ecount())
+        # subvertex_list = list(subvertex_set)
+        # subgraph = learned_graph.subgraph(subvertex_list)
+        subgraph_file = output_dir + '/species_subgraph.graphml'
+        subgraph.write_graphml(subgraph_file)
 
 # Sample command
 # -------------------------------------------------------------------
@@ -418,7 +439,7 @@ optimizer = torch.optim.Adam([
 
 logger.info("Training model")
 best_val_acc = test_acc = 0
-for epoch in range(1, 25):
+for epoch in range(1, 50):
     train()
     train_acc, val_acc, tmp_test_acc = test()
     if val_acc > best_val_acc:
