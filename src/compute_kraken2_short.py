@@ -48,7 +48,7 @@ false = 0
 total = 0
 
 for read in k_map:
-    r = read[:-2]
+    r = read
     if r in gt_map:
         ktaxon = k_map[read]
         if ktaxon > 0:

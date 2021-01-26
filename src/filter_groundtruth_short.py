@@ -12,7 +12,6 @@ import re
 import logging
 import os.path as osp
 
-import random
 import numpy as np
 import pickle
 from Bio import SeqIO
@@ -21,29 +20,29 @@ from collections import defaultdict
 from bidirectionalmap.bidirectionalmap import BidirectionalMap
 
 
-read_file = sys.argv[1]
-ground_truth_file = sys.argv[2]
-filtered_fastq = sys.argv[3]
+ground_truth = sys.argv[1]
+read_file = sys.argv[2]
 
-taxons = {10239, 1122187, 173053, 1385}
-gt_map = defaultdict(int)
-
-with open(ground_truth_file) as file:
+read_bin_map = defaultdict(str)
+with open(ground_truth) as file:
     line = file.readline()
     while line != "":
         strings = line.split(' ')
-        strings[1] = strings[1].rstrip('\n')
-        gt_map[strings[0]] = int(strings[1])
+        read_bin_map[strings[0]] = strings[1].rstrip('\n')
         line = file.readline()
 
-filtered_records = []
+filter_file = sys.argv[3]
+fgt = open(filter_file, 'w+')
+check_reads = {}
 for record in SeqIO.parse(read_file, 'fastq'):
     name = record.name[:-2]
-    if name in gt_map:
-        taxon = gt_map[name]
-        if taxon in taxons:
-            filtered_records.append(record)
-    if len(filtered_records) == int(sys.argv[4]):
-        break
-        
-SeqIO.write(filtered_records, filtered_fastq, 'fastq')
+    if name in read_bin_map:
+        if name not in check_reads:
+            fgt.write(name + ' ' + read_bin_map[name] + '\n')
+            check_reads[name] = 1
+
+fgt.close()
+
+
+
+

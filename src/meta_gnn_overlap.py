@@ -152,7 +152,8 @@ class Metagenomic(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        return ['species_with_readnames.graphml', 'shuffled_reads.fastq', 'species_all.graphml', 'species_training.graphml']
+        # return ['species_with_readnames.graphml', 'shuffled_reads.fastq', 'species_all.graphml', 'species_training.graphml']
+        return ['minimap2.graphml', 'sampled_4species.fq', 'species_all.graphml', 'species_training.graphml']
 
     @property
     def processed_file_names(self):
@@ -207,7 +208,7 @@ class Metagenomic(InMemoryDataset):
         node_labels = []
         for v in overlap_graph.vs:
             node_labels.append(species_map[v['species']])
-
+        
         # prepare torch objects
         x = torch.tensor(node_tfq, dtype=torch.float)
         g = torch.tensor(node_gc, dtype=torch.float)
@@ -304,7 +305,7 @@ def test():
 
 @torch.no_grad()
 def output(output_dir, input_dir, data_name):
-    overlap_graph_file = input_dir + '/' + data_name + '/raw/species_with_readnames.graphml'
+    overlap_graph_file = input_dir + '/' + data_name + '/raw/minimap2.graphml'
     for data in loader:
         data = data.to(device)
         _, preds = model(data).max(dim=1)
@@ -340,7 +341,6 @@ def output(output_dir, input_dir, data_name):
                 if v['species'] == s:
                     t_idx_list.append(v.index)
                     break
-        print(t_idx_list)
 
         # print a subgraph
         edge_set = set()
@@ -412,7 +412,7 @@ logger.info("MetaGNN started")
 
 logger.info("Constructing the overlap graph and node feature vectors")
 
-build_species_map(osp.join(input_dir, data_name, 'raw', 'species_with_readnames.graphml'))
+build_species_map(osp.join(input_dir, data_name, 'raw', 'minimap2.graphml'))
 dataset = Metagenomic(root=input_dir, name=data_name)
 data = dataset[0]
 print(data)
@@ -439,7 +439,7 @@ optimizer = torch.optim.Adam([
 
 logger.info("Training model")
 best_val_acc = test_acc = 0
-for epoch in range(1, 50):
+for epoch in range(1, 20):
     train()
     train_acc, val_acc, tmp_test_acc = test()
     if val_acc > best_val_acc:
