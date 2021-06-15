@@ -153,7 +153,7 @@ class Metagenomic(InMemoryDataset):
     @property
     def raw_file_names(self):
         # return ['species_with_readnames.graphml', 'shuffled_reads.fastq', 'species_all.graphml', 'species_training.graphml']
-        return ['minimap2.graphml', 'sampled_4species.fq', 'species_all.graphml', 'species_training.graphml']
+        return ['minimap2.graphml', 'sampled.fq', 'species_all.graphml', 'species_training.graphml']
 
     @property
     def processed_file_names(self):
@@ -316,6 +316,7 @@ def output(output_dir, input_dir, data_name):
         rev_species_map = species_map.inverse
         vertex_set = learned_graph.vs
         miss_pred_vertices = []
+        print(data)
         perm = data.n.tolist()
         orgs = data.y.tolist()
         preds = preds.tolist()
@@ -439,7 +440,7 @@ optimizer = torch.optim.Adam([
 
 logger.info("Training model")
 best_val_acc = test_acc = 0
-for epoch in range(1, 20):
+for epoch in range(1, 50):
     train()
     train_acc, val_acc, tmp_test_acc = test()
     if val_acc > best_val_acc:

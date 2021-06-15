@@ -41,7 +41,8 @@ with open(ground_truth_file) as file:
         line = file.readline()
 
 for v in overlap_graph.vs:
-    name = v['readname'][:-2]
+    # name = v['readname'][:-2]
+    name = v['readname']
     if name in gt_map:
         v['species'] = gt_map[name]
     else:

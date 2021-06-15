@@ -48,11 +48,10 @@ false = 0
 total = 0
 
 for read in k_map:
-    r = read
-    if r in gt_map:
+    if read in gt_map:
         ktaxon = k_map[read]
         if ktaxon > 0:
-            taxon = gt_map[r]
+            taxon = gt_map[read]
             if ktaxon == taxon:
                 true += 1
             else:
