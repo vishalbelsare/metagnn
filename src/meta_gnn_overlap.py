@@ -31,6 +31,8 @@ from torch_geometric.data import InMemoryDataset
 
 species_map = BidirectionalMap()
 
+overlap_file_name = "species_with_readnames.graphml"
+
 def index_to_mask(index, size):
     mask = torch.zeros((size, ), dtype=torch.bool)
     mask[index] = 1
@@ -152,8 +154,8 @@ class Metagenomic(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        # return ['species_with_readnames.graphml', 'shuffled_reads.fastq', 'species_all.graphml', 'species_training.graphml']
-        return ['minimap2.graphml', 'sampled.fq', 'species_all.graphml', 'species_training.graphml']
+        return ['species_with_readnames.graphml', 'shuffled_reads.fastq', 'species_all.graphml', 'species_training.graphml']
+        # return ['minimap2.graphml', 'sampled.fq', 'species_all.graphml', 'species_training.graphml']
 
     @property
     def processed_file_names(self):
@@ -305,7 +307,7 @@ def test():
 
 @torch.no_grad()
 def output(output_dir, input_dir, data_name):
-    overlap_graph_file = input_dir + '/' + data_name + '/raw/minimap2.graphml'
+    overlap_graph_file = input_dir + '/' + data_name + '/raw/' + overlap_file_name
     for data in loader:
         data = data.to(device)
         _, preds = model(data).max(dim=1)
@@ -413,7 +415,7 @@ logger.info("MetaGNN started")
 
 logger.info("Constructing the overlap graph and node feature vectors")
 
-build_species_map(osp.join(input_dir, data_name, 'raw', 'minimap2.graphml'))
+build_species_map(osp.join(input_dir, data_name, 'raw', overlap_file_name))
 dataset = Metagenomic(root=input_dir, name=data_name)
 data = dataset[0]
 print(data)
